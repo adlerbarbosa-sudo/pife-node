@@ -49,12 +49,10 @@ function isValidSet(group, wildcardValue) {
     if (wildcards === 1) {
         let [n1, n2] = normals;
         if (n1.value === n2.value) return true;
-        
         if (n1.suit === n2.suit) {
             let v1 = cardValueToNum[n1.value];
             let v2 = cardValueToNum[n2.value];
             if (v1 > v2) { let temp = v1; v1 = v2; v2 = temp; }
-            
             let diff = v2 - v1;
             if (diff === 1 || diff === 2) return true; 
             if (v1 === 1 && v2 === 12) return true; 
@@ -109,6 +107,18 @@ function validatePife(hand, wildcardValue) {
     }
 }
 
+function calculatePenalties(winnerId) {
+    gameState.players.forEach(p => {
+        if (p.id !== winnerId) {
+            let points = 0;
+            p.hand.forEach(card => {
+                points += cardValueToNum[card.value];
+            });
+            p.score -= points; // Score negativo
+        }
+    });
+}
+
 function updateClients() {
     gameState.players.forEach(p => {
         const publicState = {
@@ -119,9 +129,16 @@ function updateClients() {
             turn: gameState.status === 'playing' ? gameState.players[gameState.turnIndex]?.id : null,
             opponents: gameState.players.filter(op => op.id !== p.id).map(op => ({
                 name: op.name,
-                cardCount: op.hand.length
+                avatar: op.avatar,
+                cardCount: op.hand.length,
+                wins: op.wins,
+                score: op.score
             })),
+            myName: p.name,
+            myAvatar: p.avatar,
             myHand: p.hand,
+            myWins: p.wins,
+            myScore: p.score,
             hasDrawnThisTurn: p.hasDrawnThisTurn
         };
         io.to(p.id).emit('gameState', publicState);
@@ -129,20 +146,20 @@ function updateClients() {
 }
 
 io.on('connection', (socket) => {
-    socket.on('register', (name) => {
+    socket.on('register', (data) => {
         if (gameState.players.length >= 4) return socket.emit('alerta', 'Mesa cheia (Máx 4).');
         if (!gameState.players.find(p => p.id === socket.id)) {
-            gameState.players.push({ id: socket.id, name, hand: [], hasDrawnThisTurn: false });
-            io.emit('chat_system', `🟢 ${name} entrou na mesa.`);
+            // Adicionado Avatar e Score (Pontos Negativos)
+            gameState.players.push({ id: socket.id, name: data.name, avatar: data.avatar, hand: [], hasDrawnThisTurn: false, wins: 0, score: 0 });
+            io.emit('chat_system', `🟢 ${data.avatar} ${data.name} entrou na mesa.`);
         }
         updateClients();
     });
 
-    // Evento de Chat
     socket.on('send_chat', (msg) => {
         const player = gameState.players.find(p => p.id === socket.id);
         if (player && msg.trim()) {
-            io.emit('chat_message', { sender: player.name, text: msg.trim() });
+            io.emit('chat_message', { sender: `${player.avatar} ${player.name}`, text: msg.trim() });
         }
     });
 
@@ -164,6 +181,7 @@ io.on('connection', (socket) => {
         
         gameState.status = 'playing';
         io.emit('chat_system', '🎲 O jogo começou! Boa sorte.');
+        io.emit('game_started'); // Sinal para animação e som
         updateClients();
     });
 
@@ -174,6 +192,9 @@ io.on('connection', (socket) => {
         if (gameState.deck.length === 0) gameState.deck = gameState.discardPile.splice(0, gameState.discardPile.length - 1).sort(() => Math.random() - 0.5);
         player.hand.push(gameState.deck.pop());
         player.hasDrawnThisTurn = true;
+        
+        io.emit('chat_system', `📜 ${player.avatar} comprou do Monte.`);
+        socket.emit('play_sound', 'draw');
         updateClients();
     });
 
@@ -182,8 +203,13 @@ io.on('connection', (socket) => {
         if (!player || player.id !== socket.id) return socket.emit('alerta', 'Não é seu turno!');
         if (player.hasDrawnThisTurn) return socket.emit('alerta', 'Você já comprou.');
         if (gameState.discardPile.length === 0) return socket.emit('alerta', 'Lixo vazio.');
-        player.hand.push(gameState.discardPile.pop());
+        
+        const card = gameState.discardPile.pop();
+        player.hand.push(card);
         player.hasDrawnThisTurn = true;
+        
+        io.emit('chat_system', `📜 ${player.avatar} pegou o Lixo (${card.value}${card.suit}).`);
+        socket.emit('play_sound', 'draw');
         updateClients();
     });
 
@@ -194,9 +220,13 @@ io.on('connection', (socket) => {
         
         const cardIndex = player.hand.findIndex(c => c.id === cardId);
         if (cardIndex > -1) {
-            gameState.discardPile.push(player.hand.splice(cardIndex, 1)[0]);
+            const card = player.hand.splice(cardIndex, 1)[0];
+            gameState.discardPile.push(card);
             player.hasDrawnThisTurn = false;
             gameState.turnIndex = (gameState.turnIndex + 1) % gameState.players.length;
+            
+            io.emit('chat_system', `📜 ${player.avatar} descartou uma carta.`);
+            socket.emit('play_sound', 'discard');
             updateClients();
         }
     });
@@ -209,12 +239,16 @@ io.on('connection', (socket) => {
         const result = validatePife(player.hand, gameState.wildcardValue);
         
         if (result) {
+            player.wins += 1; 
+            calculatePenalties(player.id); // Calcula os pontos negativos dos perdedores
+            
             io.emit('gameOver', { winner: player.name, winningSets: result.sets, discard: result.discard });
-            io.emit('chat_system', `🏆 ${player.name} BATEU!`);
+            io.emit('chat_system', `🏆 ${player.avatar} ${player.name} BATEU E GANHOU A RODADA!`);
             gameState.status = 'waiting';
             gameState.players.forEach(p => p.hand = []);
+            updateClients(); 
         } else {
-            socket.emit('alerta', 'Jogo inválido! Suas cartas não formam 3 trincas/sequências válidas (mesmo usando o curinga).');
+            socket.emit('alerta', 'Jogo inválido! Suas cartas não formam 3 trincas/sequências válidas.');
         }
     });
 
@@ -227,7 +261,7 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         const player = gameState.players.find(p => p.id === socket.id);
-        if (player) io.emit('chat_system', `🔴 ${player.name} saiu da mesa.`);
+        if (player) io.emit('chat_system', `🔴 ${player.avatar} ${player.name} saiu da mesa.`);
         
         gameState.players = gameState.players.filter(p => p.id !== socket.id);
         if (gameState.players.length < 2) {
