@@ -13,7 +13,6 @@ let dragStartX = 0;
 let dragStartY = 0;
 let isMoved = false;
 
-// == MEMÓRIA DE TROFÉUS ==
 let myWins = parseInt(localStorage.getItem('pife_wins')) || 0;
 let mySessionId = localStorage.getItem('pife_sessionId');
 if (!mySessionId) {
@@ -21,7 +20,6 @@ if (!mySessionId) {
     localStorage.setItem('pife_sessionId', mySessionId);
 }
 
-// = SISTEMA ANTI-TRAVAMENTO =
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') forceCleanDrag();
 });
@@ -52,7 +50,6 @@ window.onload = () => {
     document.body.className = savedTheme;
 };
 
-// RECEBE AS SALAS (ESTILO GARTIC)
 socket.on('room_list', (list) => {
     const ul = document.getElementById('room-list');
     ul.innerHTML = '';
@@ -118,20 +115,23 @@ document.addEventListener('click', (e) => {
     }
 });
 
+// Animação Perfeita para Oponente e pra Você
 socket.on('receive_emote', (data) => {
     try { playSFX('pop'); } catch(e){} 
     const el = document.createElement('div');
     el.className = 'floating-emote';
     el.innerText = data.emote;
+    
     let originEl = (data.id === socket.id) ? document.getElementById('player-name') : document.getElementById(`opp-${data.id}`);
 
     if (originEl) {
         const rect = originEl.getBoundingClientRect();
-        el.style.left = `${rect.left + (rect.width / 2) - 30}px`;
+        // Brota perfeitamente centralizado em relação ao elemento dono
+        el.style.left = `${rect.left + (rect.width / 2)}px`;
         el.style.top = `${rect.top}px`;
     } else {
         el.style.left = `50%`;
-        el.style.top = `20px`;
+        el.style.top = `50%`;
     }
 
     document.body.appendChild(el);
@@ -217,6 +217,23 @@ socket.on('registered_success', () => {
     document.getElementById('game-screen').style.display = 'flex';
     document.getElementById('chat-panel').style.display = 'flex';
 });
+
+// Se o Admin te expulsar
+socket.on('kicked_by_admin', () => {
+    alert('Você foi expulso pelo Administrador da sala.');
+    document.getElementById('game-screen').style.display = 'none';
+    document.getElementById('chat-panel').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'flex';
+    localHand = [];
+    socket.emit('leaveTable');
+});
+
+// Nova Ação do Admin
+function kickPlayerReq(targetSessionId) {
+    if(confirm('Tem certeza que deseja expulsar este jogador da sala?')) {
+        socket.emit('kick_player', targetSessionId);
+    }
+}
 
 function startGame() { socket.emit('startGame'); }
 function resetGame() { if(confirm('Resetar a mesa cancelará a partida de todos. Continuar?')) socket.emit('resetGame'); }
@@ -547,11 +564,11 @@ socket.on('gameState', (state) => {
         document.getElementById('display-room-name').innerText = state.roomId;
     }
 
-    // Salva vitórias garantindo persistência no cache
     if (state.myName) {
         myWins = state.myWins;
         localStorage.setItem('pife_wins', myWins);
-        document.getElementById('player-name').innerHTML = `${state.myAvatar} ${state.myName} <span class="trophy">🏆 ${myWins}</span>`;
+        // Exibe a Coroa de Dono da Sala ao lado do próprio nome
+        document.getElementById('player-name').innerHTML = `${state.isAdmin ? '👑' : ''} ${state.myAvatar} ${state.myName} <span class="trophy">🏆 ${myWins}</span>`;
     }
 
     if (state.isPaused) {
@@ -577,11 +594,13 @@ socket.on('gameState', (state) => {
     const topDiscard = state.discardPile.length > 0 ? state.discardPile[state.discardPile.length - 1] : null;
     document.getElementById('discard-container').innerHTML = renderCardHTML(topDiscard, false, false);
 
+    // Renderiza os Oponentes com Botão de Expulsar para o Admin e a Coroa do Admin
     document.getElementById('opponents-area').innerHTML = state.opponents.map(op => `
         <div id="opp-${op.id}" class="opponent ${op.isTurn ? 'is-turn' : ''} ${!op.connected ? 'offline' : ''}">
+            ${state.isAdmin ? `<button class="kick-btn" onclick="kickPlayerReq('${op.sessionId}')" title="Expulsar Jogador">❌</button>` : ''}
             ${op.isTurn && op.connected ? '<div class="turn-badge">Vez Dele</div>' : ''}
             ${!op.connected ? '<div class="offline-tag">Caiu...</div>' : ''}
-            <h3>${op.avatar} ${op.name}</h3>
+            <h3>${op.isAdmin ? '👑' : ''} ${op.avatar} ${op.name}</h3>
             <div><span class="trophy">🏆 ${op.wins || 0}</span></div>
             <p>${op.cardCount} cartas</p>
         </div>

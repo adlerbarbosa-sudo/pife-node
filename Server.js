@@ -29,6 +29,7 @@ function initRoom(roomId, password = '') {
         rooms[roomId] = {
             id: roomId,
             password: password,
+            adminSessionId: null, // Identifica o Dono da Sala
             status: 'waiting',
             players: [],
             deck: [],
@@ -41,6 +42,13 @@ function initRoom(roomId, password = '') {
         broadcastRoomList();
     }
     return rooms[roomId];
+}
+
+function deleteRoomIfEmpty(roomId) {
+    if (rooms[roomId] && rooms[roomId].players.length === 0) {
+        delete rooms[roomId];
+        broadcastRoomList();
+    }
 }
 
 function createDeck() {
@@ -151,13 +159,16 @@ function updateClients(roomId) {
             wildcardCard: room.wildcardCard,
             wildcardValue: room.wildcardValue,
             turn: room.status === 'playing' && currentTurnPlayer ? currentTurnPlayer.id : null,
+            isAdmin: (room.adminSessionId === p.sessionId), // Informa se ele próprio é Admin
             opponents: room.players.filter(op => op.id !== p.id).map(op => ({
                 id: op.id,
+                sessionId: op.sessionId,
                 name: op.name,
                 avatar: op.avatar,
                 cardCount: op.hand.length,
                 wins: op.wins,
                 connected: op.connected,
+                isAdmin: (room.adminSessionId === op.sessionId), // Informa se o oponente é Admin
                 isTurn: (room.status === 'playing' && currentTurnPlayer && op.id === currentTurnPlayer.id)
             })),
             myName: p.name,
@@ -179,6 +190,11 @@ function kickPlayer(roomId, sessionId) {
     
     room.players = room.players.filter(p => p.sessionId !== sessionId);
     
+    // Transfere a Coroa se o Admin for expulso ou sair
+    if (room.adminSessionId === sessionId && room.players.length > 0) {
+        room.adminSessionId = room.players[0].sessionId;
+    }
+    
     if (room.status === 'playing') {
         room.status = 'waiting';
         room.deck = [];
@@ -187,7 +203,7 @@ function kickPlayer(roomId, sessionId) {
         room.wildcardValue = null;
         room.turnIndex = 0;
         room.players.forEach(p => { p.hand = []; p.hasDrawnThisTurn = false; });
-        io.to(roomId).emit('chat_system', `💔 ${player.avatar} ${player.name} não retornou. Jogo cancelado.`);
+        io.to(roomId).emit('chat_system', `💔 ${player.avatar} ${player.name} foi desconectado. Jogo cancelado.`);
     } else if (room.players.length < 2) {
         room.status = 'waiting';
     }
@@ -202,20 +218,31 @@ function kickPlayer(roomId, sessionId) {
 
 io.on('connection', (socket) => {
     
-    // Entrega a lista de salas Gartic-style na entrada
     socket.emit('room_list', Object.values(rooms).map(r => ({
         id: r.id, count: r.players.length, hasPassword: !!r.password
     })));
 
     socket.on('register', (data) => {
         const roomId = data.room.trim().toUpperCase() || 'MESA1';
+        
+        // Limpeza de Fantasmas Cruzados (Se o cara deu F5 e mudou de sala, apaga ele da sala antiga)
+        for (let rId in rooms) {
+            if (rId !== roomId) {
+                let r = rooms[rId];
+                let pIndex = r.players.findIndex(p => p.sessionId === data.sessionId);
+                if (pIndex !== -1) {
+                    kickPlayer(rId, data.sessionId);
+                    socket.leave(rId);
+                }
+            }
+        }
+
         let room = rooms[roomId];
 
         if (room) {
             let existingPlayer = room.players.find(p => p.sessionId === data.sessionId);
             
             if (!existingPlayer) {
-                // Checa a senha apenas para novos jogadores entrando na sala
                 if (room.password && room.password !== data.password) {
                     return socket.emit('alerta', 'Senha incorreta para esta sala!');
                 }
@@ -227,8 +254,8 @@ io.on('connection', (socket) => {
                 }
             }
         } else {
-            // Cria a sala com a senha informada
             room = initRoom(roomId, data.password);
+            room.adminSessionId = data.sessionId; // O criador ganha a Coroa
         }
 
         socket.join(roomId);
@@ -242,7 +269,6 @@ io.on('connection', (socket) => {
             existingPlayer.avatar = data.avatar;
             existingPlayer.connected = true;
             
-            // Puxa as vitórias mais altas do Cache do navegador
             existingPlayer.wins = Math.max(existingPlayer.wins, data.wins || 0);
 
             if (room.disconnectTimers[data.sessionId]) {
@@ -251,6 +277,9 @@ io.on('connection', (socket) => {
             }
             io.to(roomId).emit('chat_system', `✅ ${existingPlayer.avatar} ${existingPlayer.name} reconectou!`);
         } else {
+            // Se entrou numa sala já com gente e não tem admin, define ele pra garantir
+            if (room.players.length === 0) room.adminSessionId = data.sessionId;
+
             room.players.push({ 
                 id: socket.id, 
                 sessionId: data.sessionId,
@@ -258,7 +287,7 @@ io.on('connection', (socket) => {
                 avatar: data.avatar, 
                 hand: [], 
                 hasDrawnThisTurn: false, 
-                wins: data.wins || 0, // Integra o Cache ao servidor
+                wins: data.wins || 0,
                 connected: true
             });
             io.to(roomId).emit('chat_system', `🟢 ${data.avatar} ${data.name} entrou na sala.`);
@@ -267,6 +296,24 @@ io.on('connection', (socket) => {
         
         socket.emit('registered_success');
         updateClients(roomId);
+    });
+
+    // Função Exclusiva do ADM (Expulsar travados)
+    socket.on('kick_player', (targetSessionId) => {
+        const roomId = socketRoomMap[socket.id];
+        if (!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
+        const player = room.players.find(p => p.id === socket.id);
+
+        if (player && room.adminSessionId === player.sessionId) {
+            const target = room.players.find(p => p.sessionId === targetSessionId);
+            if (target) {
+                if (target.connected) {
+                    io.to(target.id).emit('kicked_by_admin');
+                }
+                kickPlayer(roomId, targetSessionId);
+            }
+        }
     });
 
     socket.on('send_chat', (msg) => {
@@ -294,7 +341,7 @@ io.on('connection', (socket) => {
 
         if (room.players.length < 2) return socket.emit('alerta', 'Mínimo de 2 jogadores!');
         if (room.status === 'playing') return;
-        if (isGamePaused(room)) return socket.emit('alerta', 'Aguarde todos reconectarem!');
+        if (isGamePaused(room)) return socket.emit('alerta', 'Aguarde todos reconectarem ou expulse quem caiu!');
 
         room.deck = createDeck();
         room.wildcardCard = room.deck.pop(); 
@@ -437,7 +484,6 @@ io.on('connection', (socket) => {
             kickPlayer(roomId, player.sessionId);
         }
         
-        // Limpeza essencial para evitar receber mensagens de sala antiga
         socket.leave(roomId);
         delete socketRoomMap[socket.id];
     });
