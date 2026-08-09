@@ -19,10 +19,6 @@ body { background-color: #1a472a; color: #fff; overflow-x: hidden; min-height: 1
 button { padding: 10px 20px; font-size: 1rem; border: none; border-radius: 5px; background: #c5a85b; color: #111; cursor: pointer; font-weight: bold; transition: 0.2s; box-shadow: 2px 2px 5px rgba(0,0,0,0.3); }
 button:hover { background: #dfc374; transform: scale(1.05); }
 
-.highlight-btn { background: #ffeb3b; color: #111; border: 2px solid #fff; animation: pulse 2s infinite; }
-.highlight-btn:hover { background: #fff59d; transform: scale(1.1); }
-.outline { background: transparent; border: 2px solid #c5a85b; color: #c5a85b; }
-
 .trophy { color: #ffd700; font-weight: bold; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 10px; margin-left: 5px; font-size: 0.9em; box-shadow: inset 0 0 5px rgba(0,0,0,0.5);}
 
 .header { width: 100%; padding: 0 30px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;}
@@ -31,7 +27,7 @@ button:hover { background: #dfc374; transform: scale(1.05); }
 .my-turn-glow { box-shadow: 0 0 15px rgba(197, 168, 91, 0.6); background: rgba(197, 168, 91, 0.2) !important; color: #ffd700 !important; animation: pulse 2s infinite; }
 .danger-outline { background: transparent; border: 2px solid #d32f2f; color: #fff; }
 
-/* EMOTES (REAÇÕES) */
+/* EMOTES */
 .emote-wrapper { position: relative; display: inline-block; }
 .emote-menu { display: none; position: absolute; top: 115%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.9); border: 2px solid #c5a85b; border-radius: 10px; padding: 10px; gap: 10px; z-index: 500; box-shadow: 0 5px 15px rgba(0,0,0,0.5); min-width: 220px; justify-content: center; flex-wrap: wrap;}
 .emote-menu.show { display: flex; }
@@ -52,7 +48,6 @@ button:hover { background: #dfc374; transform: scale(1.05); }
 .offline-tag { color: #ff4a4a; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 5px; animation: pulse 1s infinite;}
 
 .opponent h3 { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 1.1rem; margin-bottom: 5px;}
-
 .opponent.is-turn { border: 2px solid #ffeb3b; box-shadow: 0 0 15px rgba(255, 235, 59, 0.5); background: rgba(255, 235, 59, 0.1); transform: scale(1.05); }
 .turn-badge { position: absolute; top: -15px; left: 50%; transform: translateX(-50%); background: #ffeb3b; color: #111; font-weight: bold; font-size: 0.8rem; padding: 3px 10px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.5); text-transform: uppercase; white-space: nowrap; animation: pulse 1.5s infinite; z-index: 10; }
 @keyframes pulse { 0% { opacity: 0.8; transform: translateX(-50%) scale(0.95); } 50% { opacity: 1; transform: translateX(-50%) scale(1.05); } 100% { opacity: 0.8; transform: translateX(-50%) scale(0.95); } }
@@ -89,9 +84,15 @@ button:hover { background: #dfc374; transform: scale(1.05); }
 }
 .animate-deal { animation: dealAnimation 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
 
-.layout-controls { display: flex; gap: 10px; align-items: center; background: rgba(0,0,0,0.5); padding: 10px 20px; border-radius: 20px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center;}
+/* ======== BARRA DE CONTROLES OTIMIZADA ======== */
+.layout-controls { display: flex; gap: 8px; align-items: center; background: rgba(0,0,0,0.5); padding: 10px 20px; border-radius: 30px; margin-bottom: 20px; flex-wrap: wrap; justify-content: center; max-width: 95%; }
+.layout-btn { padding: 8px 12px; font-size: 0.85rem; opacity: 0.8; }
+.layout-btn:hover { opacity: 1; }
+.highlight-btn { background: #ffeb3b; color: #111; border: 2px solid #fff; animation: pulse 2s infinite; padding: 8px 15px; font-size: 0.95rem; margin-right: 5px;}
+.highlight-btn:hover { background: #fff59d; transform: scale(1.05); }
+.outline { background: transparent; border: 2px solid #c5a85b; color: #c5a85b; }
 .action-btn.danger { background: #d32f2f; color: white; }
-.btn-bater { margin-left: 20px; }
+.btn-bater { margin-left: 10px; padding: 8px 20px; font-size: 1rem; }
 
 .hand-area { display: flex; justify-content: center; align-items: flex-end; width: 100%; min-height: 160px; padding: 0 20px; margin-bottom: 10px; overflow-x: auto; overflow-y: hidden; position: relative;}
 .layout-overlap .card { margin-left: -50px; }
@@ -141,11 +142,10 @@ button:hover { background: #dfc374; transform: scale(1.05); }
     .opponent { padding: 5px 10px; min-width: auto; margin-top: 15px;}
     .opponent h3 { font-size: 1rem; }
     
-    .desktop-only { display: none; }
-    .layout-controls { padding: 5px; gap: 5px; }
-    .layout-controls button { padding: 5px 10px; font-size: 0.8rem; }
-    .action-btn.danger { padding: 8px 15px; font-size: 1rem; }
-    .btn-bater { margin-left: 5px; }
+    .layout-controls { padding: 8px; gap: 5px; border-radius: 20px;}
+    .layout-btn { padding: 6px 10px; font-size: 0.75rem; }
+    .highlight-btn { padding: 6px 12px; font-size: 0.85rem; margin-right: 2px;}
+    .btn-bater { margin-left: 5px; padding: 6px 15px; font-size: 0.9rem;}
     
     #chat-panel {
         width: 100%; height: 50vh; top: auto; bottom: 0; 

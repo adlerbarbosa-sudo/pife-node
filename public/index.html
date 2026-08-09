@@ -31,7 +31,6 @@
             <h2 id="player-name"></h2>
             <div id="status-message">Aguardando...</div>
             <div class="header-buttons">
-                <!-- Wrapper do Menu de Emotes -->
                 <div class="emote-wrapper">
                     <button onclick="toggleEmoteMenu()" class="action-btn outline">😀 Reagir</button>
                     <div id="emote-menu" class="emote-menu">
@@ -76,14 +75,14 @@
             </div>
         </div>
 
+        <!-- Área de Controles Limpa e Compacta -->
         <div class="layout-controls">
-            <!-- Botão Mágico de Organização -->
             <button class="action-btn highlight-btn" onclick="autoSort()">🪄 Ordenar</button>
             
-            <span class="desktop-only" style="margin-left: 15px;">Visual:</span>
-            <button onclick="setLayout('layout-overlap')">Sobreposto</button>
-            <button onclick="setLayout('layout-fan')">Leque</button>
-            <button onclick="setLayout('layout-flat')">Aberto</button>
+            <button class="layout-btn" onclick="setLayout('layout-overlap')">Sobreposto</button>
+            <button class="layout-btn" onclick="setLayout('layout-fan')">Leque</button>
+            <button class="layout-btn" onclick="setLayout('layout-flat')">Aberto</button>
+            
             <button class="action-btn danger btn-bater" onclick="bater()">BATER!</button>
         </div>
 
