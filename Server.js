@@ -120,19 +120,23 @@ function calculatePenalties(winnerId) {
 }
 
 function updateClients() {
+    const currentTurnPlayer = gameState.players[gameState.turnIndex];
+    
     gameState.players.forEach(p => {
         const publicState = {
             status: gameState.status,
             discardPile: gameState.discardPile,
             wildcardCard: gameState.wildcardCard,
             wildcardValue: gameState.wildcardValue,
-            turn: gameState.status === 'playing' ? gameState.players[gameState.turnIndex]?.id : null,
+            turn: gameState.status === 'playing' && currentTurnPlayer ? currentTurnPlayer.id : null,
             opponents: gameState.players.filter(op => op.id !== p.id).map(op => ({
+                id: op.id,
                 name: op.name,
                 avatar: op.avatar,
                 cardCount: op.hand.length,
                 wins: op.wins,
-                score: op.score
+                score: op.score,
+                isTurn: (gameState.status === 'playing' && currentTurnPlayer && op.id === currentTurnPlayer.id) // Informa quem é a vez
             })),
             myName: p.name,
             myAvatar: p.avatar,
@@ -185,11 +189,15 @@ io.on('connection', (socket) => {
     });
 
     socket.on('draw_deck', () => {
+        if (gameState.status !== 'playing') return socket.emit('alerta', 'O jogo não começou!');
         const player = gameState.players[gameState.turnIndex];
         if (!player || player.id !== socket.id) return socket.emit('alerta', 'Não é seu turno!');
         if (player.hasDrawnThisTurn) return socket.emit('alerta', 'Você já comprou.');
-        if (gameState.deck.length === 0) gameState.deck = gameState.discardPile.splice(0, gameState.discardPile.length - 1).sort(() => Math.random() - 0.5);
-        player.hand.push(gameState.deck.pop());
+        if (gameState.deck.length === 0) {
+            gameState.deck = gameState.discardPile.splice(0, gameState.discardPile.length - 1).sort(() => Math.random() - 0.5);
+        }
+        const card = gameState.deck.pop();
+        if(card) player.hand.push(card);
         player.hasDrawnThisTurn = true;
         
         io.emit('chat_system', `📜 ${player.avatar} comprou do Monte.`);
@@ -198,6 +206,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('draw_discard', () => {
+        if (gameState.status !== 'playing') return socket.emit('alerta', 'O jogo não começou!');
         const player = gameState.players[gameState.turnIndex];
         if (!player || player.id !== socket.id) return socket.emit('alerta', 'Não é seu turno!');
         if (player.hasDrawnThisTurn) return socket.emit('alerta', 'Você já comprou.');
@@ -213,6 +222,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('discard', (cardId) => {
+        if (gameState.status !== 'playing') return;
         const player = gameState.players[gameState.turnIndex];
         if (!player || player.id !== socket.id) return socket.emit('alerta', 'Não é seu turno!');
         if (!player.hasDrawnThisTurn) return socket.emit('alerta', 'Compre antes de descartar.');
@@ -231,9 +241,10 @@ io.on('connection', (socket) => {
     });
 
     socket.on('bater', () => {
+        if (gameState.status !== 'playing') return;
         const player = gameState.players.find(p => p.id === socket.id);
         if (!player) return;
-        if (gameState.players[gameState.turnIndex].id !== socket.id) return socket.emit('alerta', 'Bata no seu turno!');
+        if (gameState.players[gameState.turnIndex]?.id !== socket.id) return socket.emit('alerta', 'Bata no seu turno!');
         
         const result = validatePife(player.hand, gameState.wildcardValue);
         
@@ -253,7 +264,13 @@ io.on('connection', (socket) => {
 
     socket.on('resetGame', () => {
         const player = gameState.players.find(p => p.id === socket.id);
-        gameState = { status: 'waiting', players: gameState.players.map(p => ({...p, hand: [], hasDrawnThisTurn: false})), deck: [], discardPile: [], wildcardCard: null, wildcardValue: null, turnIndex: 0 };
+        gameState.status = 'waiting';
+        gameState.deck = [];
+        gameState.discardPile = [];
+        gameState.wildcardCard = null;
+        gameState.wildcardValue = null;
+        gameState.turnIndex = 0;
+        gameState.players.forEach(p => { p.hand = []; p.hasDrawnThisTurn = false; });
         io.emit('chat_system', `⚠️ A mesa foi resetada por ${player ? player.name : 'um jogador'}.`);
         updateClients();
     });
@@ -263,7 +280,19 @@ io.on('connection', (socket) => {
         if (player) io.emit('chat_system', `🔴 ${player.avatar} ${player.name} saiu da mesa.`);
         
         gameState.players = gameState.players.filter(p => p.id !== socket.id);
-        if (gameState.players.length < 2) {
+        
+        // Regra Anti-Crash: Se alguém sair no meio, cancela a rodada.
+        if (gameState.status === 'playing') {
+            gameState.status = 'waiting';
+            gameState.deck = [];
+            gameState.discardPile = [];
+            gameState.wildcardCard = null;
+            gameState.wildcardValue = null;
+            gameState.turnIndex = 0;
+            gameState.players.forEach(p => { p.hand = []; p.hasDrawnThisTurn = false; });
+            io.emit('chat_system', `⚠️ Jogo interrompido porque um jogador desconectou.`);
+            io.emit('alerta', 'Um jogador saiu e a rodada precisou ser cancelada.');
+        } else if (gameState.players.length < 2) {
             gameState.status = 'waiting';
         }
         updateClients();

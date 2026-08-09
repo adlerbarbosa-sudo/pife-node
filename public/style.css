@@ -24,9 +24,14 @@ button:hover { background: #dfc374; transform: scale(1.05); }
 #status-message { font-size: 1.2rem; font-weight: bold; padding: 5px 15px; background: rgba(0,0,0,0.5); border-radius: 20px; text-transform: uppercase; text-align: center;}
 .danger-outline { background: transparent; border: 2px solid #d32f2f; color: #fff; }
 
+/* OPONENTES E INDICADOR DE TURNO */
 #opponents-area { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; width: 100%; padding: 0 10px;}
-.opponent { background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 10px; text-align: center; border: 1px solid #c5a85b; min-width: 120px; }
+.opponent { background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 10px; text-align: center; border: 1px solid #c5a85b; min-width: 120px; position: relative; transition: 0.3s ease; }
 .opponent h3 { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 1.1rem; margin-bottom: 5px;}
+
+.opponent.is-turn { border: 2px solid #ffeb3b; box-shadow: 0 0 15px rgba(255, 235, 59, 0.5); background: rgba(255, 235, 59, 0.1); transform: scale(1.05); }
+.turn-badge { position: absolute; top: -15px; left: 50%; transform: translateX(-50%); background: #ffeb3b; color: #111; font-weight: bold; font-size: 0.8rem; padding: 3px 10px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.5); text-transform: uppercase; white-space: nowrap; animation: pulse 1.5s infinite; z-index: 10; }
+@keyframes pulse { 0% { opacity: 0.8; transform: translateX(-50%) scale(0.95); } 50% { opacity: 1; transform: translateX(-50%) scale(1.05); } 100% { opacity: 0.8; transform: translateX(-50%) scale(0.95); } }
 
 .table-center { display: flex; gap: 40px; flex-grow: 1; align-items: center; justify-content: center; width: 100%; flex-wrap: wrap;}
 .deck-area { display: flex; flex-direction: column; align-items: center; gap: 15px; transition: transform 0.2s; }
@@ -41,7 +46,6 @@ button:hover { background: #dfc374; transform: scale(1.05); }
 .card.is-wildcard { border: 3px solid #ffeb3b; box-shadow: 0 0 20px rgba(255, 235, 59, 0.9); }
 .card.is-wildcard::after { content: '★'; position: absolute; font-size: 3rem; color: rgba(255, 235, 59, 0.4); z-index: 0; }
 
-/* RASTRO FANTASMA E ÁREA DE SOLTURA */
 .card.dragging-origin { opacity: 0.2 !important; filter: grayscale(1); }
 .ghost-card { position: fixed; pointer-events: none; z-index: 1000 !important; opacity: 0.9; transform: scale(1.1) rotate(4deg) !important; box-shadow: 0 15px 30px rgba(0,0,0,0.7); transition: none !important; }
 .drop-placeholder { width: 100px; height: 140px; border: 2px dashed #c5a85b; border-radius: 10px; background: rgba(197, 168, 91, 0.25); flex-shrink: 0; margin-left: -50px; }
@@ -110,7 +114,7 @@ button:hover { background: #dfc374; transform: scale(1.05); }
     .highlight-area { padding: 5px 10px; }
     .status-label { font-size: 0.8rem; }
     .status-label span { font-size: 1.1rem; }
-    .opponent { padding: 5px 10px; min-width: auto; }
+    .opponent { padding: 5px 10px; min-width: auto; margin-top: 15px;}
     .opponent h3 { font-size: 1rem; }
     
     .desktop-only { display: none; }

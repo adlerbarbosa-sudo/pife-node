@@ -4,7 +4,6 @@ let localHand = [];
 let currentWildcardValue = null;
 let isFirstDeal = true;
 
-// Variáveis do Sistema de Arraste Fantasma
 let draggingCardIndex = null;
 let ghostElement = null;
 let targetInsertIndex = null;
@@ -12,7 +11,6 @@ let dragStartX = 0;
 let dragStartY = 0;
 let isMoved = false;
 
-// Sintetizador de Áudio Nativo
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 function playSFX(type) {
     if(audioCtx.state === 'suspended') audioCtx.resume();
@@ -66,7 +64,7 @@ function register() {
 }
 
 function startGame() { socket.emit('startGame'); }
-function resetGame() { if(confirm('Resetar a mesa?')) socket.emit('resetGame'); }
+function resetGame() { if(confirm('Resetar a mesa cancelará a partida de todos. Continuar?')) socket.emit('resetGame'); }
 function drawDeck() { socket.emit('draw_deck'); }
 function drawDiscard() { socket.emit('draw_discard'); }
 function bater() { socket.emit('bater'); }
@@ -100,7 +98,7 @@ function renderCardHTML(card, isWildcard = false, addAnim = false) {
 }
 
 // ==========================================
-// SISTEMA DE ARRASTE E DESCARTE FLUIDO
+// ARRASTE E DESCARTE BLINDADO
 // ==========================================
 function initCardDrag(e, index) {
     if (e.button !== 0 && e.type !== 'touchstart') return; 
@@ -116,7 +114,6 @@ function initCardDrag(e, index) {
     const cardObj = localHand[index];
     const cardEl = document.getElementById(`card-${cardObj.id}`);
     
-    // Cria o Rastro Fantasma
     ghostElement = cardEl.cloneNode(true);
     ghostElement.id = 'ghost-card';
     ghostElement.classList.add('ghost-card');
@@ -151,7 +148,6 @@ function onDragMove(e) {
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     
-    // Detecta se o usuário realmente arrastou mais de 8px
     if (Math.abs(clientX - dragStartX) > 8 || Math.abs(clientY - dragStartY) > 8) {
         isMoved = true;
     }
@@ -159,7 +155,6 @@ function onDragMove(e) {
     if (isMoved && e.cancelable) e.preventDefault();
     updateGhostPosition(clientX, clientY);
 
-    // Destaca o Lixo se estiver arrastando por cima dele
     const discardArea = document.querySelector('.deck-area:nth-child(3)');
     if (isOverDiscardArea(clientX, clientY)) {
         discardArea?.classList.add('drop-target');
@@ -167,7 +162,6 @@ function onDragMove(e) {
         discardArea?.classList.remove('drop-target');
     }
 
-    // Calcula a nova posição de encaixe dentro da mão
     const handArea = document.getElementById('my-hand');
     const cardsElements = Array.from(handArea.querySelectorAll('.card:not(.ghost-card)'));
     
@@ -208,47 +202,49 @@ function updateDropPlaceholder() {
 function onDragEnd(e) {
     if (draggingCardIndex === null) return;
 
-    const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
-    const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+    try {
+        const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+        const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
 
-    window.removeEventListener('mousemove', onDragMove);
-    window.removeEventListener('touchmove', onDragMove);
-    window.removeEventListener('mouseup', onDragEnd);
-    window.removeEventListener('touchend', onDragEnd);
+        window.removeEventListener('mousemove', onDragMove);
+        window.removeEventListener('touchmove', onDragMove);
+        window.removeEventListener('mouseup', onDragEnd);
+        window.removeEventListener('touchend', onDragEnd);
 
-    document.querySelector('.deck-area:nth-child(3)')?.classList.remove('drop-target');
+        document.querySelector('.deck-area:nth-child(3)')?.classList.remove('drop-target');
 
-    if (ghostElement) {
-        ghostElement.remove();
-        ghostElement = null;
-    }
-
-    const placeholder = document.getElementById('drop-placeholder');
-    if (placeholder) placeholder.remove();
-
-    const cardObj = localHand[draggingCardIndex];
-
-    // CASO 1: Foi solto em cima do Lixo -> Descarta diretamente
-    if (isMoved && isOverDiscardArea(clientX, clientY)) {
-        socket.emit('discard', cardObj.id);
-    } 
-    // CASO 2: Foi apenas um Clique/Toque rápido sem arrastar -> Pergunta se quer descartar
-    else if (!isMoved) {
-        if (confirm(`Deseja descartar a carta ${cardObj.value}${cardObj.suit}?`)) {
-            socket.emit('discard', cardObj.id);
+        if (ghostElement) {
+            ghostElement.remove();
+            ghostElement = null;
         }
-    } 
-    // CASO 3: Arrasto comum -> Reorganiza a posição na mão
-    else if (targetInsertIndex !== null) {
-        const [movedCard] = localHand.splice(draggingCardIndex, 1);
-        let finalIndex = targetInsertIndex;
-        if (draggingCardIndex < targetInsertIndex) finalIndex--;
-        localHand.splice(finalIndex, 0, movedCard);
-    }
 
-    draggingCardIndex = null;
-    targetInsertIndex = null;
-    renderHand();
+        const placeholder = document.getElementById('drop-placeholder');
+        if (placeholder) placeholder.remove();
+
+        const cardObj = localHand[draggingCardIndex];
+
+        if (isMoved && isOverDiscardArea(clientX, clientY)) {
+            socket.emit('discard', cardObj.id);
+        } 
+        else if (!isMoved) {
+            if (confirm(`Deseja descartar a carta ${cardObj.value}${cardObj.suit}?`)) {
+                socket.emit('discard', cardObj.id);
+            }
+        } 
+        else if (targetInsertIndex !== null) {
+            const [movedCard] = localHand.splice(draggingCardIndex, 1);
+            let finalIndex = targetInsertIndex;
+            if (draggingCardIndex < targetInsertIndex) finalIndex--;
+            localHand.splice(finalIndex, 0, movedCard);
+        }
+    } catch(err) {
+        console.error("Erro no dragEnd: ", err);
+        if(ghostElement) ghostElement.remove();
+    } finally {
+        draggingCardIndex = null;
+        targetInsertIndex = null;
+        renderHand();
+    }
 }
 
 function renderHand() {
@@ -302,8 +298,10 @@ socket.on('gameState', (state) => {
     const topDiscard = state.discardPile.length > 0 ? state.discardPile[state.discardPile.length - 1] : null;
     document.getElementById('discard-container').innerHTML = renderCardHTML(topDiscard, false, false);
 
+    // Atualiza HTML dos Oponentes com Tag de Turno
     document.getElementById('opponents-area').innerHTML = state.opponents.map(op => `
-        <div class="opponent">
+        <div class="opponent ${op.isTurn ? 'is-turn' : ''}">
+            ${op.isTurn ? '<div class="turn-badge">Vez Dele</div>' : ''}
             <h3>${op.avatar} ${op.name}</h3>
             <div><span class="trophy">🏆 ${op.wins || 0}</span> <span class="penalty">💔 ${op.score || 0}</span></div>
             <p>${op.cardCount} cartas</p>
