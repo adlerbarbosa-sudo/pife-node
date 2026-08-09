@@ -4,7 +4,6 @@ let localHand = [];
 let currentWildcardValue = null;
 let isFirstDeal = true;
 let wasMyTurn = false; 
-let sortMode = 'suit'; 
 
 let draggingCardIndex = null;
 let ghostElement = null;
@@ -139,17 +138,15 @@ document.addEventListener('click', (e) => {
 });
 
 socket.on('receive_emote', (data) => {
-    try { playSFX('pop'); } catch(e){} // Garante que toca som sem quebrar
+    try { playSFX('pop'); } catch(e){} 
     
     const el = document.createElement('div');
     el.className = 'floating-emote';
     el.innerText = data.emote;
 
-    // Acha a div da pessoa que mandou
     let originEl = (data.id === socket.id) ? document.getElementById('player-name') : document.getElementById(`opp-${data.id}`);
 
     if (originEl) {
-        // Pega as cordenadas precisas na tela (Mesmo no Celular)
         const rect = originEl.getBoundingClientRect();
         el.style.left = `${rect.left + (rect.width / 2) - 30}px`;
         el.style.top = `${rect.top}px`;
@@ -162,29 +159,86 @@ socket.on('receive_emote', (data) => {
     setTimeout(() => el.remove(), 2500); 
 });
 
+// ==========================================
+// A NOVA ORGANIZAÇÃO MÁGICA INTELIGENTE
+// ==========================================
+const cardValToNum = { 'A':1, '2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13 };
+const suitOrder = { '♥': 1, '♦': 2, '♣': 3, '♠': 4 };
+
+function isValidSetForSort(group, wildcardValue) {
+    let normals = group.filter(c => c.value !== wildcardValue);
+    let wildcards = group.length - normals.length;
+
+    if (wildcards >= 2) return true;
+
+    if (wildcards === 1) {
+        let [n1, n2] = normals;
+        if (n1.value === n2.value) return true;
+        if (n1.suit === n2.suit) {
+            let v1 = cardValToNum[n1.value];
+            let v2 = cardValToNum[n2.value];
+            if (v1 > v2) { let temp = v1; v1 = v2; v2 = temp; }
+            let diff = v2 - v1;
+            if (diff === 1 || diff === 2) return true;
+            if (v1 === 1 && v2 === 12) return true;
+            if (v1 === 1 && v2 === 13) return true;
+        }
+        return false;
+    }
+
+    if (wildcards === 0) {
+        let [n1, n2, n3] = normals;
+        if (n1.value === n2.value && n2.value === n3.value) return true;
+        if (n1.suit === n2.suit && n2.suit === n3.suit) {
+            let nums = [cardValToNum[n1.value], cardValToNum[n2.value], cardValToNum[n3.value]].sort((a,b) => a - b);
+            if (nums[0] + 1 === nums[1] && nums[1] + 1 === nums[2]) return true;
+            if (nums[0] === 1 && nums[1] === 12 && nums[2] === 13) return true;
+        }
+        return false;
+    }
+    return false;
+}
+
 function autoSort() {
     if(localHand.length === 0) return;
-    
-    const suitOrder = { '♥': 1, '♦': 2, '♣': 3, '♠': 4 };
-    const valOrder = { 'A':1, '2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13 };
 
-    if(sortMode === 'suit') {
-        localHand.sort((a,b) => {
-            if(suitOrder[a.suit] !== suitOrder[b.suit]) return suitOrder[a.suit] - suitOrder[b.suit];
-            return valOrder[a.value] - valOrder[b.value];
-        });
-        sortMode = 'value'; 
-        showToast('🪄 Mão Ordenada por Naipe!');
-    } else {
-        localHand.sort((a,b) => {
-            if(valOrder[a.value] !== valOrder[b.value]) return valOrder[a.value] - valOrder[b.value];
-            return suitOrder[a.suit] - suitOrder[b.suit];
-        });
-        sortMode = 'suit';
-        showToast('🪄 Mão Ordenada por Número!');
+    let sets = [];
+    let remaining = [...localHand];
+    let found = true;
+
+    // ALGORITMO GULOSO: Procura todos os jogos válidos de 3 cartas na mão
+    while(found && remaining.length >= 3) {
+        found = false;
+        for(let i=0; i<remaining.length; i++) {
+            for(let j=i+1; j<remaining.length; j++) {
+                for(let k=j+1; k<remaining.length; k++) {
+                    if(isValidSetForSort([remaining[i], remaining[j], remaining[k]], currentWildcardValue)) {
+                        sets.push(remaining[i], remaining[j], remaining[k]);
+                        let toRemove = [remaining[i].id, remaining[j].id, remaining[k].id];
+                        remaining = remaining.filter(c => !toRemove.includes(c.id));
+                        found = true;
+                        break;
+                    }
+                }
+                if(found) break;
+            }
+            if(found) break;
+        }
     }
+
+    // O lixo restante é ordenado visualmente por Naipe e por Número sequencial
+    remaining.sort((a,b) => {
+        if(suitOrder[a.suit] !== suitOrder[b.suit]) return suitOrder[a.suit] - suitOrder[b.suit];
+        return cardValToNum[a.value] - cardValToNum[b.value];
+    });
+
+    // Remonta a mão: Jogos válidos à esquerda, Lixo ordenado à direita.
+    localHand = [...sets, ...remaining];
+    
+    showToast('🪄 Mão Inteligentemente Ordenada!', true);
     renderHand();
 }
+// ==========================================
 
 function setLayout(layoutClass) {
     currentLayout = layoutClass;
@@ -414,7 +468,6 @@ socket.on('gameState', (state) => {
     
     currentWildcardValue = state.wildcardValue;
     
-    // Atualiza a Quantidade de Cartas do Monte
     const deckCountEl = document.getElementById('deck-count');
     if (deckCountEl) deckCountEl.innerText = state.deckCount || 0;
 
