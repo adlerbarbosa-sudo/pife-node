@@ -24,34 +24,26 @@ button:hover { background: #dfc374; transform: scale(1.05); }
 .header { width: 100%; padding: 0 30px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;}
 .header-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; align-items: center;}
 #status-message { font-size: 1.2rem; font-weight: bold; padding: 5px 15px; background: rgba(0,0,0,0.5); border-radius: 20px; text-transform: uppercase; text-align: center; transition: 0.3s; }
-.my-turn-glow { box-shadow: 0 0 15px rgba(197, 168, 91, 0.6); background: rgba(197, 168, 91, 0.2) !important; color: #ffd700 !important; animation: pulse 2s infinite; }
+.my-turn-glow { box-shadow: 0 0 15px rgba(197, 168, 91, 0.6); background: rgba(197, 168, 91, 0.2) !important; color: #ffd700 !important; animation: glowPulse 2s infinite; }
 .danger-outline { background: transparent; border: 2px solid #d32f2f; color: #fff; }
 
-/* EMOTES Corrigido para Celular */
+/* EMOTES */
 .emote-wrapper { position: relative; display: inline-block; }
 .emote-menu { display: none; position: absolute; top: 115%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.9); border: 2px solid #c5a85b; border-radius: 10px; padding: 10px; gap: 10px; z-index: 500; box-shadow: 0 5px 15px rgba(0,0,0,0.5); min-width: 220px; justify-content: center; flex-wrap: wrap;}
 .emote-menu.show { display: flex; }
 .emote-menu span { font-size: 2rem; cursor: pointer; transition: 0.2s; user-select: none; padding: 5px; }
 .emote-menu span:hover { transform: scale(1.3); }
 
-/* Posição FIXA para não ser cortado pela tela ou por barras de rolagem */
 .floating-emote { position: fixed; font-size: 4.5rem; pointer-events: none; z-index: 99999; animation: floatUp 2.5s ease-out forwards; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.8)); }
-@keyframes floatUp {
-    0% { transform: translateY(0) scale(0.5); opacity: 0; }
-    20% { transform: translateY(-40px) scale(1.2); opacity: 1; }
-    80% { transform: translateY(-120px) scale(1); opacity: 1; }
-    100% { transform: translateY(-180px) scale(0.8); opacity: 0; }
-}
 
 #opponents-area { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; width: 100%; padding: 0 10px;}
 .opponent { background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 10px; text-align: center; border: 1px solid #c5a85b; min-width: 120px; position: relative; transition: 0.3s ease; }
 .opponent.offline { opacity: 0.5; filter: grayscale(1); border-color: #555; }
-.offline-tag { color: #ff4a4a; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 5px; animation: pulse 1s infinite;}
+.offline-tag { color: #ff4a4a; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 5px; animation: simplePulse 1.5s infinite;}
 
 .opponent h3 { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 1.1rem; margin-bottom: 5px;}
 .opponent.is-turn { border: 2px solid #ffeb3b; box-shadow: 0 0 15px rgba(255, 235, 59, 0.5); background: rgba(255, 235, 59, 0.1); transform: scale(1.05); }
-.turn-badge { position: absolute; top: -15px; left: 50%; transform: translateX(-50%); background: #ffeb3b; color: #111; font-weight: bold; font-size: 0.8rem; padding: 3px 10px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.5); text-transform: uppercase; white-space: nowrap; animation: pulse 1.5s infinite; z-index: 10; }
-@keyframes pulse { 0% { opacity: 0.8; transform: translateX(-50%) scale(0.95); } 50% { opacity: 1; transform: translateX(-50%) scale(1.05); } 100% { opacity: 0.8; transform: translateX(-50%) scale(0.95); } }
+.turn-badge { position: absolute; top: -15px; left: 50%; transform: translateX(-50%); background: #ffeb3b; color: #111; font-weight: bold; font-size: 0.8rem; padding: 3px 10px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.5); text-transform: uppercase; white-space: nowrap; animation: badgePulse 1.5s infinite; z-index: 10; }
 
 .table-center { display: flex; gap: 40px; flex-grow: 1; align-items: center; justify-content: center; width: 100%; flex-wrap: wrap;}
 .deck-area { display: flex; flex-direction: column; align-items: center; gap: 15px; transition: transform 0.2s; }
@@ -81,13 +73,39 @@ button:hover { background: #dfc374; transform: scale(1.05); }
 .card-mini-bottom { position: absolute; bottom: 5px; right: 5px; font-size: 1rem; line-height: 1; transform: rotate(180deg); z-index: 2;}
 .card-center { z-index: 2; position: relative;}
 
+
+/* ======== ANIMAÇÕES CORRIGIDAS ======== */
+/* Animação exclusiva para itens centralizados com left: 50% */
+@keyframes badgePulse { 
+    0% { opacity: 0.8; transform: translateX(-50%) scale(0.95); } 
+    50% { opacity: 1; transform: translateX(-50%) scale(1.05); } 
+    100% { opacity: 0.8; transform: translateX(-50%) scale(0.95); } 
+}
+/* Animação simples de escala para botões (sem desalinhar) */
+@keyframes simplePulse { 
+    0% { transform: scale(1); } 
+    50% { transform: scale(1.05); } 
+    100% { transform: scale(1); } 
+}
+/* Animação de brilho para o Status */
+@keyframes glowPulse { 
+    0% { box-shadow: 0 0 10px rgba(197, 168, 91, 0.4); } 
+    50% { box-shadow: 0 0 25px rgba(197, 168, 91, 1); } 
+    100% { box-shadow: 0 0 10px rgba(197, 168, 91, 0.4); } 
+}
+
 @keyframes dealAnimation {
     0% { transform: translateY(-300px) scale(0.5); opacity: 0; }
     100% { transform: translateY(0) scale(1); opacity: 1; }
 }
-.animate-deal { animation: dealAnimation 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+@keyframes floatUp {
+    0% { transform: translateY(0) scale(0.5); opacity: 0; }
+    20% { transform: translateY(-40px) scale(1.2); opacity: 1; }
+    80% { transform: translateY(-120px) scale(1); opacity: 1; }
+    100% { transform: translateY(-180px) scale(0.8); opacity: 0; }
+}
 
-/* ======== BARRA DE CONTROLES OTIMIZADA (SOLUÇÃO DO FUNDO PRETO) ======== */
+/* ======== BARRA DE CONTROLES ======== */
 .layout-controls { 
     display: flex; 
     gap: 12px; 
@@ -96,15 +114,18 @@ button:hover { background: #dfc374; transform: scale(1.05); }
     background: rgba(0,0,0,0.6); 
     padding: 10px 20px; 
     border-radius: 30px; 
-    margin: 0 auto 20px auto; /* Centraliza fisicamente */
+    margin: 0 auto 20px auto; 
     flex-wrap: wrap; 
-    width: fit-content; /* Abraça todos os botões perfeitamente */
+    width: fit-content; 
     max-width: 95%; 
 }
 .layout-btn { padding: 8px 12px; font-size: 0.85rem; opacity: 0.8; }
 .layout-btn:hover { opacity: 1; }
-.highlight-btn { background: #ffeb3b; color: #111; border: 2px solid #fff; animation: pulse 2s infinite; padding: 8px 15px; font-size: 0.95rem; }
-.highlight-btn:hover { background: #fff59d; transform: scale(1.05); }
+
+/* Botão Mágico usa simplePulse agora */
+.highlight-btn { background: #ffeb3b; color: #111; border: 2px solid #fff; animation: simplePulse 2s infinite; padding: 8px 15px; font-size: 0.95rem; }
+.highlight-btn:hover { background: #fff59d; animation: none; transform: scale(1.05); }
+
 .outline { background: transparent; border: 2px solid #c5a85b; color: #c5a85b; }
 .action-btn.danger { background: #d32f2f; color: white; }
 .btn-bater { padding: 8px 20px; font-size: 1rem; }
