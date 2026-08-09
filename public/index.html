@@ -3,11 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Pife Elegante com Curinga</title>
+    <title>Clube do Pife</title>
+    <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <meta name="theme-color" content="#1a472a">
 </head>
-<body>
+<body class="theme-green">
     <div id="turn-toast" class="turn-toast"></div>
 
     <div id="login-screen" class="screen">
@@ -22,6 +24,8 @@
                 <label><input type="radio" name="avatar" value="🤡"> 🤡</label>
             </div>
             <input type="text" id="username" placeholder="Seu apelido..." autocomplete="off">
+            <!-- NOVO: Campo de Sala -->
+            <input type="text" id="room" placeholder="Nome da Sala (Opcional)" autocomplete="off">
             <button onclick="register()">Entrar na Mesa</button>
         </div>
     </div>
@@ -29,9 +33,21 @@
     <div id="game-screen" class="screen com-chat" style="display: none;">
         <div class="header">
             <h2 id="player-name"></h2>
+            
             <div id="status-message">Aguardando...</div>
+            
             <div class="header-buttons">
-                <!-- Wrapper do Menu de Emotes -->
+                <!-- Temas da Mesa -->
+                <div class="emote-wrapper">
+                    <button onclick="toggleThemeMenu()" class="action-btn outline">🎨 Mesa</button>
+                    <div id="theme-menu" class="emote-menu">
+                        <button onclick="changeTheme('theme-green')" style="background: #1a472a;">Verde</button>
+                        <button onclick="changeTheme('theme-blue')" style="background: #0b2e59; color: white;">Azul</button>
+                        <button onclick="changeTheme('theme-red')" style="background: #7b1113; color: white;">Vermelho</button>
+                        <button onclick="changeTheme('theme-black')" style="background: #111111; color: white;">Preto</button>
+                    </div>
+                </div>
+
                 <div class="emote-wrapper">
                     <button onclick="toggleEmoteMenu()" class="action-btn outline">😀 Reagir</button>
                     <div id="emote-menu" class="emote-menu">
@@ -46,7 +62,7 @@
 
                 <button id="btn-start" onclick="startGame()">Iniciar</button>
                 <button onclick="resetGame()" class="danger-outline">Resetar</button>
-                <button onclick="leaveTable()" class="danger-outline">Sair da Mesa</button>
+                <button onclick="leaveTable()" class="danger-outline">Sair</button>
                 <button id="btn-toggle-chat" onclick="toggleMobileChat()" style="display: none;">Chat 💬</button>
             </div>
         </div>
@@ -94,7 +110,7 @@
 
     <div id="chat-panel" style="display: none;">
         <div class="chat-header">
-            Resenha da Mesa
+            Sala: <span id="display-room-name">Global</span>
             <button id="btn-close-chat" onclick="toggleMobileChat()" style="display: none;">❌</button>
         </div>
         <div id="chat-messages"></div>

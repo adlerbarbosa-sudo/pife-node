@@ -4,6 +4,7 @@ let localHand = [];
 let currentWildcardValue = null;
 let isFirstDeal = true;
 let wasMyTurn = false; 
+let sortMode = 'suit'; 
 
 let draggingCardIndex = null;
 let ghostElement = null;
@@ -11,6 +12,11 @@ let targetInsertIndex = null;
 let dragStartX = 0;
 let dragStartY = 0;
 let isMoved = false;
+
+// REGISTRO PWA (Service Worker)
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(err => console.log("PWA SW falhou", err));
+}
 
 let mySessionId = localStorage.getItem('pife_sessionId');
 if (!mySessionId) {
@@ -21,12 +27,27 @@ if (!mySessionId) {
 window.onload = () => {
     let savedName = localStorage.getItem('pife_name');
     let savedAvatar = localStorage.getItem('pife_avatar');
+    let savedRoom = localStorage.getItem('pife_room');
+    let savedTheme = localStorage.getItem('pife_theme') || 'theme-green';
+    
     if (savedName) document.getElementById('username').value = savedName;
+    if (savedRoom) document.getElementById('room').value = savedRoom;
     if (savedAvatar) {
         const radio = document.querySelector(`input[name="avatar"][value="${savedAvatar}"]`);
         if (radio) radio.checked = true;
     }
+    document.body.className = savedTheme;
 };
+
+function changeTheme(themeName) {
+    document.body.className = themeName;
+    localStorage.setItem('pife_theme', themeName);
+    document.getElementById('theme-menu').classList.remove('show');
+}
+
+function toggleThemeMenu() {
+    document.getElementById('theme-menu').classList.toggle('show');
+}
 
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 function playSFX(type) {
@@ -88,13 +109,15 @@ socket.on('game_started', () => {
 
 function register() {
     const name = document.getElementById('username').value;
+    const room = document.getElementById('room').value;
     const avatar = document.querySelector('input[name="avatar"]:checked').value;
     
     if (name.trim()) {
         localStorage.setItem('pife_name', name);
+        localStorage.setItem('pife_room', room);
         localStorage.setItem('pife_avatar', avatar);
         
-        socket.emit('register', { sessionId: mySessionId, name, avatar });
+        socket.emit('register', { sessionId: mySessionId, name, avatar, room });
         if(audioCtx.state === 'suspended') audioCtx.resume();
     }
 }
@@ -112,7 +135,7 @@ function drawDiscard() { socket.emit('draw_discard'); }
 function bater() { socket.emit('bater'); }
 
 function leaveTable() {
-    if(confirm('Deseja mesmo levantar da mesa? Você voltará para a tela inicial.')) {
+    if(confirm('Deseja mesmo levantar da mesa?')) {
         socket.emit('leaveTable');
         document.getElementById('game-screen').style.display = 'none';
         document.getElementById('chat-panel').style.display = 'none';
@@ -121,10 +144,7 @@ function leaveTable() {
     }
 }
 
-function toggleEmoteMenu() {
-    document.getElementById('emote-menu').classList.toggle('show');
-}
-
+function toggleEmoteMenu() { document.getElementById('emote-menu').classList.toggle('show'); }
 function sendEmote(emoji) {
     socket.emit('send_emote', emoji);
     document.getElementById('emote-menu').classList.remove('show');
@@ -133,17 +153,18 @@ function sendEmote(emoji) {
 document.addEventListener('click', (e) => {
     const wrapper = document.querySelector('.emote-wrapper');
     if (wrapper && !wrapper.contains(e.target)) {
-        document.getElementById('emote-menu').classList.remove('show');
+        const em = document.getElementById('emote-menu');
+        const tm = document.getElementById('theme-menu');
+        if(em) em.classList.remove('show');
+        if(tm) tm.classList.remove('show');
     }
 });
 
 socket.on('receive_emote', (data) => {
     try { playSFX('pop'); } catch(e){} 
-    
     const el = document.createElement('div');
     el.className = 'floating-emote';
     el.innerText = data.emote;
-
     let originEl = (data.id === socket.id) ? document.getElementById('player-name') : document.getElementById(`opp-${data.id}`);
 
     if (originEl) {
@@ -159,9 +180,6 @@ socket.on('receive_emote', (data) => {
     setTimeout(() => el.remove(), 2500); 
 });
 
-// ==========================================
-// A NOVA ORGANIZAÇÃO MÁGICA INTELIGENTE
-// ==========================================
 const cardValToNum = { 'A':1, '2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13 };
 const suitOrder = { '♥': 1, '♦': 2, '♣': 3, '♠': 4 };
 
@@ -170,7 +188,6 @@ function isValidSetForSort(group, wildcardValue) {
     let wildcards = group.length - normals.length;
 
     if (wildcards >= 2) return true;
-
     if (wildcards === 1) {
         let [n1, n2] = normals;
         if (n1.value === n2.value) return true;
@@ -185,7 +202,6 @@ function isValidSetForSort(group, wildcardValue) {
         }
         return false;
     }
-
     if (wildcards === 0) {
         let [n1, n2, n3] = normals;
         if (n1.value === n2.value && n2.value === n3.value) return true;
@@ -206,7 +222,6 @@ function autoSort() {
     let remaining = [...localHand];
     let found = true;
 
-    // ALGORITMO GULOSO: Procura todos os jogos válidos de 3 cartas na mão
     while(found && remaining.length >= 3) {
         found = false;
         for(let i=0; i<remaining.length; i++) {
@@ -226,19 +241,15 @@ function autoSort() {
         }
     }
 
-    // O lixo restante é ordenado visualmente por Naipe e por Número sequencial
     remaining.sort((a,b) => {
         if(suitOrder[a.suit] !== suitOrder[b.suit]) return suitOrder[a.suit] - suitOrder[b.suit];
         return cardValToNum[a.value] - cardValToNum[b.value];
     });
 
-    // Remonta a mão: Jogos válidos à esquerda, Lixo ordenado à direita.
     localHand = [...sets, ...remaining];
-    
     showToast('🪄 Mão Inteligentemente Ordenada!', true);
     renderHand();
 }
-// ==========================================
 
 function setLayout(layoutClass) {
     currentLayout = layoutClass;
@@ -470,6 +481,10 @@ socket.on('gameState', (state) => {
     
     const deckCountEl = document.getElementById('deck-count');
     if (deckCountEl) deckCountEl.innerText = state.deckCount || 0;
+
+    if (state.roomId) {
+        document.getElementById('display-room-name').innerText = state.roomId;
+    }
 
     if (state.myName) {
         document.getElementById('player-name').innerHTML = `${state.myAvatar} ${state.myName} <span class="trophy">🏆 ${state.myWins || 0}</span>`;

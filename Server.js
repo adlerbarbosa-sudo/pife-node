@@ -9,20 +9,29 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-let gameState = {
-    status: 'waiting',
-    players: [],
-    deck: [],
-    discardPile: [],
-    wildcardCard: null,
-    wildcardValue: null,
-    turnIndex: 0
-};
-
-let disconnectTimers = {}; 
+// === SISTEMA DE SALAS (ROOMS) ===
+const rooms = {};
+const socketRoomMap = {}; // Descobre em qual sala um socket estava se a net dele cair
 
 const cardValues = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 const cardValueToNum = { 'A':1, '2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13 };
+
+function initRoom(roomId) {
+    if (!rooms[roomId]) {
+        rooms[roomId] = {
+            id: roomId,
+            status: 'waiting',
+            players: [],
+            deck: [],
+            discardPile: [],
+            wildcardCard: null,
+            wildcardValue: null,
+            turnIndex: 0,
+            disconnectTimers: {}
+        };
+    }
+    return rooms[roomId];
+}
 
 function createDeck() {
     const suits = ['♥', '♦', '♣', '♠'];
@@ -109,33 +118,37 @@ function validatePife(hand, wildcardValue) {
     }
 }
 
-function isGamePaused() {
-    return gameState.players.some(p => !p.connected);
+function isGamePaused(room) {
+    return room.players.some(p => !p.connected);
 }
 
-function updateClients() {
-    const currentTurnPlayer = gameState.players[gameState.turnIndex];
-    const isPaused = isGamePaused();
+function updateClients(roomId) {
+    const room = rooms[roomId];
+    if(!room) return;
     
-    gameState.players.forEach(p => {
+    const currentTurnPlayer = room.players[room.turnIndex];
+    const isPaused = isGamePaused(room);
+    
+    room.players.forEach(p => {
         if (!p.connected) return; 
         
         const publicState = {
-            status: gameState.status,
+            roomId: room.id,
+            status: room.status,
             isPaused: isPaused,
-            deckCount: gameState.deck.length, // NOVO: Contador de cartas
-            discardPile: gameState.discardPile,
-            wildcardCard: gameState.wildcardCard,
-            wildcardValue: gameState.wildcardValue,
-            turn: gameState.status === 'playing' && currentTurnPlayer ? currentTurnPlayer.id : null,
-            opponents: gameState.players.filter(op => op.id !== p.id).map(op => ({
+            deckCount: room.deck.length,
+            discardPile: room.discardPile,
+            wildcardCard: room.wildcardCard,
+            wildcardValue: room.wildcardValue,
+            turn: room.status === 'playing' && currentTurnPlayer ? currentTurnPlayer.id : null,
+            opponents: room.players.filter(op => op.id !== p.id).map(op => ({
                 id: op.id,
                 name: op.name,
                 avatar: op.avatar,
                 cardCount: op.hand.length,
                 wins: op.wins,
                 connected: op.connected,
-                isTurn: (gameState.status === 'playing' && currentTurnPlayer && op.id === currentTurnPlayer.id)
+                isTurn: (room.status === 'playing' && currentTurnPlayer && op.id === currentTurnPlayer.id)
             })),
             myName: p.name,
             myAvatar: p.avatar,
@@ -147,31 +160,39 @@ function updateClients() {
     });
 }
 
-function kickPlayer(sessionId) {
-    const player = gameState.players.find(p => p.sessionId === sessionId);
+function kickPlayer(roomId, sessionId) {
+    const room = rooms[roomId];
+    if(!room) return;
+    
+    const player = room.players.find(p => p.sessionId === sessionId);
     if (!player) return;
     
-    gameState.players = gameState.players.filter(p => p.sessionId !== sessionId);
+    room.players = room.players.filter(p => p.sessionId !== sessionId);
     
-    if (gameState.status === 'playing') {
-        gameState.status = 'waiting';
-        gameState.deck = [];
-        gameState.discardPile = [];
-        gameState.wildcardCard = null;
-        gameState.wildcardValue = null;
-        gameState.turnIndex = 0;
-        gameState.players.forEach(p => { p.hand = []; p.hasDrawnThisTurn = false; });
-        io.emit('chat_system', `💔 ${player.avatar} ${player.name} não retornou a tempo. Jogo cancelado.`);
-    } else if (gameState.players.length < 2) {
-        gameState.status = 'waiting';
+    if (room.status === 'playing') {
+        room.status = 'waiting';
+        room.deck = [];
+        room.discardPile = [];
+        room.wildcardCard = null;
+        room.wildcardValue = null;
+        room.turnIndex = 0;
+        room.players.forEach(p => { p.hand = []; p.hasDrawnThisTurn = false; });
+        io.to(roomId).emit('chat_system', `💔 ${player.avatar} ${player.name} não retornou. Jogo cancelado.`);
+    } else if (room.players.length < 2) {
+        room.status = 'waiting';
     }
-    updateClients();
+    updateClients(roomId);
 }
 
 io.on('connection', (socket) => {
     
     socket.on('register', (data) => {
-        let existingPlayer = gameState.players.find(p => p.sessionId === data.sessionId);
+        const roomId = data.room.trim().toUpperCase() || 'MESA1';
+        socket.join(roomId);
+        socketRoomMap[socket.id] = roomId;
+        
+        let room = initRoom(roomId);
+        let existingPlayer = room.players.find(p => p.sessionId === data.sessionId);
 
         if (existingPlayer) {
             existingPlayer.id = socket.id;
@@ -179,16 +200,16 @@ io.on('connection', (socket) => {
             existingPlayer.avatar = data.avatar;
             existingPlayer.connected = true;
 
-            if (disconnectTimers[data.sessionId]) {
-                clearTimeout(disconnectTimers[data.sessionId]);
-                delete disconnectTimers[data.sessionId];
+            if (room.disconnectTimers[data.sessionId]) {
+                clearTimeout(room.disconnectTimers[data.sessionId]);
+                delete room.disconnectTimers[data.sessionId];
             }
-            io.emit('chat_system', `✅ ${existingPlayer.avatar} ${existingPlayer.name} reconectou!`);
+            io.to(roomId).emit('chat_system', `✅ ${existingPlayer.avatar} ${existingPlayer.name} reconectou!`);
         } else {
-            if (gameState.players.length >= 4) return socket.emit('alerta', 'Mesa cheia (Máx 4).');
-            if (gameState.status === 'playing') return socket.emit('alerta', 'Jogo em andamento, aguarde na tela inicial.');
+            if (room.players.length >= 4) return socket.emit('alerta', 'A mesa escolhida já está cheia (Máx 4).');
+            if (room.status === 'playing') return socket.emit('alerta', 'Jogo em andamento nesta sala, aguarde na tela inicial.');
             
-            gameState.players.push({ 
+            room.players.push({ 
                 id: socket.id, 
                 sessionId: data.sessionId,
                 name: data.name, 
@@ -198,164 +219,200 @@ io.on('connection', (socket) => {
                 wins: 0,
                 connected: true
             });
-            io.emit('chat_system', `🟢 ${data.avatar} ${data.name} entrou na mesa.`);
+            io.to(roomId).emit('chat_system', `🟢 ${data.avatar} ${data.name} entrou na sala ${roomId}.`);
         }
         
         socket.emit('registered_success');
-        updateClients();
+        updateClients(roomId);
     });
 
     socket.on('send_chat', (msg) => {
-        const player = gameState.players.find(p => p.id === socket.id);
+        const roomId = socketRoomMap[socket.id];
+        if(!roomId || !rooms[roomId]) return;
+        const player = rooms[roomId].players.find(p => p.id === socket.id);
         if (player && msg.trim()) {
-            io.emit('chat_message', { sender: `${player.avatar} ${player.name}`, text: msg.trim() });
+            io.to(roomId).emit('chat_message', { sender: `${player.avatar} ${player.name}`, text: msg.trim() });
         }
     });
 
-    // Rota das Reações Animadas (Emotes)
     socket.on('send_emote', (emote) => {
-        const player = gameState.players.find(p => p.id === socket.id);
+        const roomId = socketRoomMap[socket.id];
+        if(!roomId || !rooms[roomId]) return;
+        const player = rooms[roomId].players.find(p => p.id === socket.id);
         if (player) {
-            io.emit('receive_emote', { id: player.id, emote });
+            io.to(roomId).emit('receive_emote', { id: player.id, emote });
         }
     });
 
     socket.on('startGame', () => {
-        if (gameState.players.length < 2) return socket.emit('alerta', 'Mínimo de 2 jogadores!');
-        if (gameState.status === 'playing') return;
-        if (isGamePaused()) return socket.emit('alerta', 'Aguarde todos reconectarem!');
+        const roomId = socketRoomMap[socket.id];
+        if(!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
 
-        gameState.deck = createDeck();
-        gameState.wildcardCard = gameState.deck.pop(); 
-        gameState.wildcardValue = getNextValue(gameState.wildcardCard.value);
+        if (room.players.length < 2) return socket.emit('alerta', 'Mínimo de 2 jogadores!');
+        if (room.status === 'playing') return;
+        if (isGamePaused(room)) return socket.emit('alerta', 'Aguarde todos reconectarem!');
+
+        room.deck = createDeck();
+        room.wildcardCard = room.deck.pop(); 
+        room.wildcardValue = getNextValue(room.wildcardCard.value);
         
-        gameState.discardPile = [gameState.deck.pop()]; 
-        gameState.turnIndex = 0;
+        room.discardPile = [room.deck.pop()]; 
+        room.turnIndex = 0;
         
-        gameState.players.forEach(p => {
-            p.hand = gameState.deck.splice(0, 9);
+        room.players.forEach(p => {
+            p.hand = room.deck.splice(0, 9);
             p.hasDrawnThisTurn = false;
         });
         
-        gameState.status = 'playing';
-        io.emit('chat_system', '🎲 O jogo começou! Boa sorte.');
-        io.emit('game_started');
-        updateClients();
+        room.status = 'playing';
+        io.to(roomId).emit('chat_system', '🎲 O jogo começou! Boa sorte.');
+        io.to(roomId).emit('game_started');
+        updateClients(roomId);
     });
 
     socket.on('draw_deck', () => {
-        if (gameState.status !== 'playing') return socket.emit('alerta', 'O jogo não começou!');
-        if (isGamePaused()) return socket.emit('alerta', 'Jogo pausado: alguém caiu!');
+        const roomId = socketRoomMap[socket.id];
+        if(!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
+
+        if (room.status !== 'playing') return socket.emit('alerta', 'O jogo não começou!');
+        if (isGamePaused(room)) return socket.emit('alerta', 'Jogo pausado: alguém caiu!');
         
-        const player = gameState.players[gameState.turnIndex];
+        const player = room.players[room.turnIndex];
         if (!player || player.id !== socket.id) return socket.emit('alerta', 'Não é seu turno!');
         if (player.hasDrawnThisTurn) return socket.emit('alerta', 'Você já comprou.');
         
-        if (gameState.deck.length === 0) {
-            gameState.deck = gameState.discardPile.splice(0, gameState.discardPile.length - 1).sort(() => Math.random() - 0.5);
-            io.emit('chat_system', `♻️ O Lixo foi embaralhado de volta para o Monte!`);
+        if (room.deck.length === 0) {
+            room.deck = room.discardPile.splice(0, room.discardPile.length - 1).sort(() => Math.random() - 0.5);
+            io.to(roomId).emit('chat_system', `♻️ O Lixo foi embaralhado de volta para o Monte!`);
         }
-        const card = gameState.deck.pop();
+        const card = room.deck.pop();
         if(card) player.hand.push(card);
         player.hasDrawnThisTurn = true;
         
         socket.emit('play_sound', 'draw');
-        updateClients();
+        updateClients(roomId);
     });
 
     socket.on('draw_discard', () => {
-        if (gameState.status !== 'playing') return socket.emit('alerta', 'O jogo não começou!');
-        if (isGamePaused()) return socket.emit('alerta', 'Jogo pausado: alguém caiu!');
+        const roomId = socketRoomMap[socket.id];
+        if(!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
+
+        if (room.status !== 'playing') return socket.emit('alerta', 'O jogo não começou!');
+        if (isGamePaused(room)) return socket.emit('alerta', 'Jogo pausado: alguém caiu!');
         
-        const player = gameState.players[gameState.turnIndex];
+        const player = room.players[room.turnIndex];
         if (!player || player.id !== socket.id) return socket.emit('alerta', 'Não é seu turno!');
         if (player.hasDrawnThisTurn) return socket.emit('alerta', 'Você já comprou.');
-        if (gameState.discardPile.length === 0) return socket.emit('alerta', 'Lixo vazio.');
+        if (room.discardPile.length === 0) return socket.emit('alerta', 'Lixo vazio.');
         
-        const card = gameState.discardPile.pop();
+        const card = room.discardPile.pop();
         player.hand.push(card);
         player.hasDrawnThisTurn = true;
         
-        io.emit('chat_system', `📜 ${player.avatar} pegou o Lixo (${card.value}${card.suit}).`);
+        io.to(roomId).emit('chat_system', `📜 ${player.avatar} pegou o Lixo (${card.value}${card.suit}).`);
         socket.emit('play_sound', 'draw');
-        updateClients();
+        updateClients(roomId);
     });
 
     socket.on('discard', (cardId) => {
-        if (gameState.status !== 'playing' || isGamePaused()) return;
+        const roomId = socketRoomMap[socket.id];
+        if(!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
+
+        if (room.status !== 'playing' || isGamePaused(room)) return;
         
-        const player = gameState.players[gameState.turnIndex];
+        const player = room.players[room.turnIndex];
         if (!player || player.id !== socket.id) return socket.emit('alerta', 'Não é seu turno!');
         if (!player.hasDrawnThisTurn) return socket.emit('alerta', 'Compre antes de descartar.');
         
         const cardIndex = player.hand.findIndex(c => c.id === cardId);
         if (cardIndex > -1) {
             const card = player.hand.splice(cardIndex, 1)[0];
-            gameState.discardPile.push(card);
+            room.discardPile.push(card);
             player.hasDrawnThisTurn = false;
-            gameState.turnIndex = (gameState.turnIndex + 1) % gameState.players.length;
+            room.turnIndex = (room.turnIndex + 1) % room.players.length;
             
             socket.emit('play_sound', 'discard');
-            updateClients();
+            updateClients(roomId);
         }
     });
 
     socket.on('bater', () => {
-        if (gameState.status !== 'playing' || isGamePaused()) return;
+        const roomId = socketRoomMap[socket.id];
+        if(!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
+
+        if (room.status !== 'playing' || isGamePaused(room)) return;
         
-        const player = gameState.players.find(p => p.id === socket.id);
+        const player = room.players.find(p => p.id === socket.id);
         if (!player) return;
-        if (gameState.players[gameState.turnIndex]?.id !== socket.id) return socket.emit('alerta', 'Bata no seu turno!');
+        if (room.players[room.turnIndex]?.id !== socket.id) return socket.emit('alerta', 'Bata no seu turno!');
         
-        const result = validatePife(player.hand, gameState.wildcardValue);
+        const result = validatePife(player.hand, room.wildcardValue);
         
         if (result) {
             player.wins += 1; 
-            io.emit('gameOver', { winner: player.name, winningSets: result.sets, discard: result.discard });
-            io.emit('chat_system', `🏆 ${player.avatar} ${player.name} BATEU E GANHOU A RODADA!`);
-            gameState.status = 'waiting';
-            gameState.players.forEach(p => p.hand = []);
-            updateClients(); 
+            io.to(roomId).emit('gameOver', { winner: player.name, winningSets: result.sets, discard: result.discard });
+            io.to(roomId).emit('chat_system', `🏆 ${player.avatar} ${player.name} BATEU E GANHOU A RODADA!`);
+            room.status = 'waiting';
+            room.players.forEach(p => p.hand = []);
+            updateClients(roomId); 
         } else {
             socket.emit('alerta', 'Jogo inválido! Suas cartas não formam 3 trincas/sequências válidas.');
         }
     });
 
     socket.on('resetGame', () => {
-        const player = gameState.players.find(p => p.id === socket.id);
-        gameState.status = 'waiting';
-        gameState.deck = [];
-        gameState.discardPile = [];
-        gameState.wildcardCard = null;
-        gameState.wildcardValue = null;
-        gameState.turnIndex = 0;
-        gameState.players.forEach(p => { p.hand = []; p.hasDrawnThisTurn = false; });
-        io.emit('chat_system', `⚠️ A mesa foi resetada por ${player ? player.name : 'um jogador'}.`);
-        updateClients();
+        const roomId = socketRoomMap[socket.id];
+        if(!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
+
+        const player = room.players.find(p => p.id === socket.id);
+        room.status = 'waiting';
+        room.deck = [];
+        room.discardPile = [];
+        room.wildcardCard = null;
+        room.wildcardValue = null;
+        room.turnIndex = 0;
+        room.players.forEach(p => { p.hand = []; p.hasDrawnThisTurn = false; });
+        io.to(roomId).emit('chat_system', `⚠️ A mesa foi resetada por ${player ? player.name : 'um jogador'}.`);
+        updateClients(roomId);
     });
 
     socket.on('leaveTable', () => {
-        const player = gameState.players.find(p => p.id === socket.id);
+        const roomId = socketRoomMap[socket.id];
+        if(!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
+
+        const player = room.players.find(p => p.id === socket.id);
         if (player) {
-            if (disconnectTimers[player.sessionId]) clearTimeout(disconnectTimers[player.sessionId]);
-            io.emit('chat_system', `🔴 ${player.avatar} ${player.name} levantou da mesa.`);
-            kickPlayer(player.sessionId);
+            if (room.disconnectTimers[player.sessionId]) clearTimeout(room.disconnectTimers[player.sessionId]);
+            io.to(roomId).emit('chat_system', `🔴 ${player.avatar} ${player.name} levantou da mesa.`);
+            kickPlayer(roomId, player.sessionId);
         }
     });
 
     socket.on('disconnect', () => {
-        const player = gameState.players.find(p => p.id === socket.id);
+        const roomId = socketRoomMap[socket.id];
+        if(!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
+
+        const player = room.players.find(p => p.id === socket.id);
         if (player) {
             player.connected = false;
             
-            io.emit('chat_system', `⚠️ A conexão de ${player.name} caiu! Pausando a mesa (60s)...`);
+            io.to(roomId).emit('chat_system', `⚠️ A conexão de ${player.name} caiu! Pausando a mesa (60s)...`);
             
-            disconnectTimers[player.sessionId] = setTimeout(() => {
-                kickPlayer(player.sessionId);
+            room.disconnectTimers[player.sessionId] = setTimeout(() => {
+                kickPlayer(roomId, player.sessionId);
             }, 60000); 
             
-            updateClients();
+            updateClients(roomId);
         }
+        delete socketRoomMap[socket.id]; // Limpeza da memória
     });
 });
 
