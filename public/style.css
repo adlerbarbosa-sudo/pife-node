@@ -29,7 +29,8 @@ button:hover { background: #dfc374; transform: scale(1.05); }
 .opponent h3 { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 1.1rem; margin-bottom: 5px;}
 
 .table-center { display: flex; gap: 40px; flex-grow: 1; align-items: center; justify-content: center; width: 100%; flex-wrap: wrap;}
-.deck-area { display: flex; flex-direction: column; align-items: center; gap: 15px; }
+.deck-area { display: flex; flex-direction: column; align-items: center; gap: 15px; transition: transform 0.2s; }
+.deck-area.drop-target { transform: scale(1.1); }
 .highlight-area { background: rgba(0,0,0,0.3); padding: 10px 20px; border-radius: 15px; border: 1px solid #c5a85b; }
 .status-label { font-size: 1.1rem; font-weight: bold; color: #c5a85b; text-transform: uppercase; }
 .status-label span { color: #fff; font-size: 1.5rem;}
@@ -40,10 +41,10 @@ button:hover { background: #dfc374; transform: scale(1.05); }
 .card.is-wildcard { border: 3px solid #ffeb3b; box-shadow: 0 0 20px rgba(255, 235, 59, 0.9); }
 .card.is-wildcard::after { content: '★'; position: absolute; font-size: 3rem; color: rgba(255, 235, 59, 0.4); z-index: 0; }
 
-/* EFEITO DE ARRASTE E RASTRO FANTASMA */
-.card.dragging-origin { opacity: 0.3 !important; filter: grayscale(0.8); }
-.ghost-card { position: fixed; pointer-events: none; z-index: 1000 !important; opacity: 0.85; transform: scale(1.1) rotate(5deg) !important; box-shadow: 0 15px 30px rgba(0,0,0,0.6); transition: none !important; }
-.drop-placeholder { width: 100px; height: 140px; border: 2px dashed #c5a85b; border-radius: 10px; background: rgba(197, 168, 91, 0.2); flex-shrink: 0; margin-left: -50px; }
+/* RASTRO FANTASMA E ÁREA DE SOLTURA */
+.card.dragging-origin { opacity: 0.2 !important; filter: grayscale(1); }
+.ghost-card { position: fixed; pointer-events: none; z-index: 1000 !important; opacity: 0.9; transform: scale(1.1) rotate(4deg) !important; box-shadow: 0 15px 30px rgba(0,0,0,0.7); transition: none !important; }
+.drop-placeholder { width: 100px; height: 140px; border: 2px dashed #c5a85b; border-radius: 10px; background: rgba(197, 168, 91, 0.25); flex-shrink: 0; margin-left: -50px; }
 
 .card.back { background: repeating-linear-gradient(45deg, #0b2e59, #0b2e59 10px, #1a4f8d 10px, #1a4f8d 20px); color: transparent; border: 4px solid #fff; }
 .card.empty { background: rgba(255,255,255,0.1); border: 2px dashed #ccc; color: #ccc; cursor: default; font-size: 1.2rem;}

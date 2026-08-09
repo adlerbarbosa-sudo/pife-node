@@ -8,6 +8,9 @@ let isFirstDeal = true;
 let draggingCardIndex = null;
 let ghostElement = null;
 let targetInsertIndex = null;
+let dragStartX = 0;
+let dragStartY = 0;
+let isMoved = false;
 
 // Sintetizador de Áudio Nativo
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -78,25 +81,16 @@ function toggleGroup(cardId) {
     if(cardEl) cardEl.classList.toggle('grouped');
 }
 
-function handleCardClick(cardId) {
-    // Se estava apenas arrastando, ignora o clique
-    if (ghostElement) return;
-    const card = localHand.find(c => c.id === cardId);
-    if (confirm(`Deseja descartar a carta ${card.value}${card.suit}?`)) {
-        socket.emit('discard', cardId);
-    }
-}
-
 function getSuitColor(suit) { return (suit === '♥' || suit === '♦') ? 'red' : 'black'; }
 
-function renderCardHTML(card, action = '', isWildcard = false, addAnim = false) {
+function renderCardHTML(card, isWildcard = false, addAnim = false) {
     if (!card) return `<div class="card empty">Vazio</div>`;
     const wcClass = isWildcard ? 'is-wildcard' : '';
     const animClass = addAnim ? 'animate-deal' : '';
     
     return `
-        <div id="card-${card.id}" class="card ${getSuitColor(card.suit)} ${wcClass} ${animClass}" 
-             onclick="${action}" oncontextmenu="toggleGroup('${card.id}'); return false;"
+        <div id="card-${card.id}" class="card ${getSuitColor(card.suit)} ${wcClass} ${animClass}"
+             oncontextmenu="toggleGroup('${card.id}'); return false;"
              ondblclick="toggleGroup('${card.id}')">
             <div class="card-mini">${card.value}<br>${card.suit}</div>
             <div class="card-center">${card.suit}</div>
@@ -106,12 +100,19 @@ function renderCardHTML(card, action = '', isWildcard = false, addAnim = false) 
 }
 
 // ==========================================
-// SISTEMA DE ARRASTE FANTASMA (CUSTOM DRAG)
+// SISTEMA DE ARRASTE E DESCARTE FLUIDO
 // ==========================================
 function initCardDrag(e, index) {
-    if (e.button !== 0 && e.type !== 'touchstart') return; // Apenas clique esquerdo ou toque
-    
+    if (e.button !== 0 && e.type !== 'touchstart') return; 
+
     draggingCardIndex = index;
+    isMoved = false;
+    
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    dragStartX = clientX;
+    dragStartY = clientY;
+    
     const cardObj = localHand[index];
     const cardEl = document.getElementById(`card-${cardObj.id}`);
     
@@ -122,10 +123,6 @@ function initCardDrag(e, index) {
     document.body.appendChild(ghostElement);
     
     cardEl.classList.add('dragging-origin');
-    
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    
     updateGhostPosition(clientX, clientY);
     
     window.addEventListener('mousemove', onDragMove);
@@ -136,21 +133,41 @@ function initCardDrag(e, index) {
 
 function updateGhostPosition(x, y) {
     if (ghostElement) {
-        ghostElement.style.left = `${x - 50}px`;
-        ghostElement.style.top = `${y - 70}px`;
+        ghostElement.style.left = `${x - 40}px`;
+        ghostElement.style.top = `${y - 50}px`;
     }
+}
+
+function isOverDiscardArea(x, y) {
+    const discardEl = document.getElementById('discard-container');
+    if (!discardEl) return false;
+    const rect = discardEl.getBoundingClientRect();
+    return (x >= rect.left - 30 && x <= rect.right + 30 && y >= rect.top - 30 && y <= rect.bottom + 30);
 }
 
 function onDragMove(e) {
     if (draggingCardIndex === null) return;
-    if (e.preventDefault && e.cancelable) e.preventDefault();
 
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     
+    // Detecta se o usuário realmente arrastou mais de 8px
+    if (Math.abs(clientX - dragStartX) > 8 || Math.abs(clientY - dragStartY) > 8) {
+        isMoved = true;
+    }
+
+    if (isMoved && e.cancelable) e.preventDefault();
     updateGhostPosition(clientX, clientY);
 
-    // Calcula a posição de inserção baseada nas cartas visíveis
+    // Destaca o Lixo se estiver arrastando por cima dele
+    const discardArea = document.querySelector('.deck-area:nth-child(3)');
+    if (isOverDiscardArea(clientX, clientY)) {
+        discardArea?.classList.add('drop-target');
+    } else {
+        discardArea?.classList.remove('drop-target');
+    }
+
+    // Calcula a nova posição de encaixe dentro da mão
     const handArea = document.getElementById('my-hand');
     const cardsElements = Array.from(handArea.querySelectorAll('.card:not(.ghost-card)'));
     
@@ -191,10 +208,15 @@ function updateDropPlaceholder() {
 function onDragEnd(e) {
     if (draggingCardIndex === null) return;
 
+    const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
+    const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+
     window.removeEventListener('mousemove', onDragMove);
     window.removeEventListener('touchmove', onDragMove);
     window.removeEventListener('mouseup', onDragEnd);
     window.removeEventListener('touchend', onDragEnd);
+
+    document.querySelector('.deck-area:nth-child(3)')?.classList.remove('drop-target');
 
     if (ghostElement) {
         ghostElement.remove();
@@ -204,12 +226,23 @@ function onDragEnd(e) {
     const placeholder = document.getElementById('drop-placeholder');
     if (placeholder) placeholder.remove();
 
-    // Executa a reordenação se a posição mudou
-    if (targetInsertIndex !== null) {
+    const cardObj = localHand[draggingCardIndex];
+
+    // CASO 1: Foi solto em cima do Lixo -> Descarta diretamente
+    if (isMoved && isOverDiscardArea(clientX, clientY)) {
+        socket.emit('discard', cardObj.id);
+    } 
+    // CASO 2: Foi apenas um Clique/Toque rápido sem arrastar -> Pergunta se quer descartar
+    else if (!isMoved) {
+        if (confirm(`Deseja descartar a carta ${cardObj.value}${cardObj.suit}?`)) {
+            socket.emit('discard', cardObj.id);
+        }
+    } 
+    // CASO 3: Arrasto comum -> Reorganiza a posição na mão
+    else if (targetInsertIndex !== null) {
         const [movedCard] = localHand.splice(draggingCardIndex, 1);
         let finalIndex = targetInsertIndex;
-        if (draggingCardIndex < targetInsertIndex) finalIndex--; // Ajusta o índice após remoção
-        
+        if (draggingCardIndex < targetInsertIndex) finalIndex--;
         localHand.splice(finalIndex, 0, movedCard);
     }
 
@@ -217,14 +250,13 @@ function onDragEnd(e) {
     targetInsertIndex = null;
     renderHand();
 }
-// ==========================================
 
 function renderHand() {
     const handArea = document.getElementById('my-hand');
     handArea.className = `hand-area ${currentLayout}`;
     handArea.innerHTML = localHand.map((card, index) => {
         let isWildcard = (card.value === currentWildcardValue);
-        let html = renderCardHTML(card, `handleCardClick('${card.id}')`, isWildcard, isFirstDeal);
+        let html = renderCardHTML(card, isWildcard, isFirstDeal);
         
         if(currentLayout === 'layout-fan') {
             let offset = index - (localHand.length / 2);
@@ -234,7 +266,6 @@ function renderHand() {
         return html;
     }).join('');
 
-    // Acopla o detector de arraste em cada carta
     localHand.forEach((card, index) => {
         const cardEl = document.getElementById(`card-${card.id}`);
         if (cardEl) {
@@ -265,11 +296,11 @@ socket.on('gameState', (state) => {
         statusMsg.innerText = 'Aguardando Inicio...';
     }
 
-    document.getElementById('wildcard-container').innerHTML = renderCardHTML(state.wildcardCard, '', false, false);
+    document.getElementById('wildcard-container').innerHTML = renderCardHTML(state.wildcardCard, false, false);
     document.getElementById('wildcard-text').innerText = state.wildcardValue || '-';
 
     const topDiscard = state.discardPile.length > 0 ? state.discardPile[state.discardPile.length - 1] : null;
-    document.getElementById('discard-container').innerHTML = renderCardHTML(topDiscard, 'drawDiscard()', false, false);
+    document.getElementById('discard-container').innerHTML = renderCardHTML(topDiscard, false, false);
 
     document.getElementById('opponents-area').innerHTML = state.opponents.map(op => `
         <div class="opponent">
@@ -294,13 +325,13 @@ socket.on('gameOver', (data) => {
     
     let html = data.winningSets.map(set => `
         <div class="set-group">
-            ${set.map(card => renderCardHTML(card, '', card.value === currentWildcardValue, false)).join('')}
+            ${set.map(card => renderCardHTML(card, card.value === currentWildcardValue, false)).join('')}
         </div>
     `).join('');
 
     if (data.discard) {
         html += `<div class="set-group" style="margin-left: 50px; opacity: 0.7;">
-            <div><small style="color:#fff;">Descarte:</small><br>${renderCardHTML(data.discard, '', false, false)}</div>
+            <div><small style="color:#fff;">Descarte:</small><br>${renderCardHTML(data.discard, false, false)}</div>
         </div>`;
     }
     document.getElementById('winner-hand').innerHTML = html;
