@@ -2,9 +2,10 @@ const socket = io();
 let currentLayout = 'layout-overlap';
 let localHand = []; 
 let currentWildcardValue = null;
-let isFirstDeal = true; // Controle para a animação
+let isFirstDeal = true;
+let selectedTouchIndex = null; // Guarda a primeira carta clicada para reorganizar no touch
 
-// ==== SINTETIZADOR DE ÁUDIO NATIVO (Sem arquivos externos) ====
+// Sintetizador de Áudio Nativo
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 function playSFX(type) {
     if(audioCtx.state === 'suspended') audioCtx.resume();
@@ -32,23 +33,17 @@ function playSFX(type) {
     else if (type === 'win') {
         osc.type = 'square';
         osc.frequency.setValueAtTime(440, audioCtx.currentTime);
-        osc.frequency.setValueAtTime(554.37, audioCtx.currentTime + 0.1); // Dó sustenido
-        osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.2); // Mi
+        osc.frequency.setValueAtTime(554.37, audioCtx.currentTime + 0.1);
+        osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.2);
         gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
         gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.4);
         osc.start(); osc.stop(audioCtx.currentTime + 0.4);
     }
 }
-// ===============================================================
 
 socket.on('alerta', alert);
-
-// Escuta os eventos de som do servidor
 socket.on('play_sound', playSFX);
-
-socket.on('game_started', () => {
-    isFirstDeal = true;
-});
+socket.on('game_started', () => { isFirstDeal = true; });
 
 function register() {
     const name = document.getElementById('username').value;
@@ -59,8 +54,6 @@ function register() {
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('game-screen').style.display = 'flex';
         document.getElementById('chat-panel').style.display = 'flex';
-        
-        // Ativa o áudio no primeiro clique (Regra dos navegadores)
         if(audioCtx.state === 'suspended') audioCtx.resume();
     }
 }
@@ -81,20 +74,41 @@ function toggleGroup(cardId) {
     if(cardEl) cardEl.classList.toggle('grouped');
 }
 
-function discardOrSelect(cardId, event) {
-    socket.emit('discard', cardId);
+// Ação de clique na carta da mão: sistema de confirmação e seleção touch
+function handleHandCardClick(cardId, cardIndex) {
+    // Se o jogador der um toque para mover de posição no celular:
+    if (selectedTouchIndex !== null) {
+        if (selectedTouchIndex !== cardIndex) {
+            const [moved] = localHand.splice(selectedTouchIndex, 1);
+            localHand.splice(cardIndex, 0, moved);
+        }
+        selectedTouchIndex = null;
+        renderHand();
+        return;
+    }
+
+    // Pergunta de confirmação antes de descartar
+    const card = localHand.find(c => c.id === cardId);
+    if (confirm(`Deseja descartar a carta ${card.value}${card.suit}?`)) {
+        socket.emit('discard', cardId);
+    } else {
+        // Se cancelou, assume que o jogador talvez queira mover de posição essa carta
+        selectedTouchIndex = cardIndex;
+        renderHand();
+    }
 }
 
 function getSuitColor(suit) { return (suit === '♥' || suit === '♦') ? 'red' : 'black'; }
 
-function renderCardHTML(card, action = '', isWildcard = false, isDraggable = true, addAnim = false) {
+function renderCardHTML(card, action = '', isWildcard = false, isDraggable = true, addAnim = false, isSelected = false) {
     if (!card) return `<div class="card empty">Vazio</div>`;
     const wcClass = isWildcard ? 'is-wildcard' : '';
     const animClass = addAnim ? 'animate-deal' : '';
+    const selectedClass = isSelected ? 'selected-touch' : '';
     const dragAttrs = isDraggable ? `draggable="true" ondragstart="dragStart(event, '${card.id}')" ondragover="dragOver(event)" ondrop="drop(event, '${card.id}')"` : '';
     
     return `
-        <div id="card-${card.id}" class="card ${getSuitColor(card.suit)} ${wcClass} ${animClass}" 
+        <div id="card-${card.id}" class="card ${getSuitColor(card.suit)} ${wcClass} ${animClass} ${selectedClass}" 
              onclick="${action}" oncontextmenu="toggleGroup('${card.id}'); return false;"
              ondblclick="toggleGroup('${card.id}')"
              ${dragAttrs}>
@@ -105,6 +119,7 @@ function renderCardHTML(card, action = '', isWildcard = false, isDraggable = tru
     `;
 }
 
+// Drag e Drop no PC
 let draggedId = null;
 function dragStart(e, id) { draggedId = id; }
 function dragOver(e) { e.preventDefault(); }
@@ -119,13 +134,22 @@ function drop(e, targetId) {
     renderHand();
 }
 
+// Soltar a carta diretamente em cima da pilha do Lixo para descartar
+function dropToDiscard(e) {
+    e.preventDefault();
+    if (draggedId) {
+        socket.emit('discard', draggedId);
+        draggedId = null;
+    }
+}
+
 function renderHand() {
     const handArea = document.getElementById('my-hand');
     handArea.className = `hand-area ${currentLayout}`;
     handArea.innerHTML = localHand.map((card, index) => {
         let isWildcard = (card.value === currentWildcardValue);
-        // Aplica a animação de deslizar apenas na primeira distribuição
-        let html = renderCardHTML(card, `discardOrSelect('${card.id}', event)`, isWildcard, true, isFirstDeal);
+        let isSelected = (selectedTouchIndex === index);
+        let html = renderCardHTML(card, `handleHandCardClick('${card.id}', ${index})`, isWildcard, true, isFirstDeal, isSelected);
         
         if(currentLayout === 'layout-fan') {
             let offset = index - (localHand.length / 2);
@@ -135,7 +159,7 @@ function renderHand() {
         return html;
     }).join('');
     
-    if (localHand.length > 0) isFirstDeal = false; // Desliga a animação após a primeira vez
+    if (localHand.length > 0) isFirstDeal = false;
 }
 
 socket.on('gameState', (state) => {
@@ -178,7 +202,7 @@ socket.on('gameState', (state) => {
 });
 
 socket.on('gameOver', (data) => {
-    playSFX('win'); // Toca o som da vitória
+    playSFX('win');
     
     document.getElementById('game-screen').style.display = 'none';
     document.getElementById('game-over-screen').style.display = 'flex';

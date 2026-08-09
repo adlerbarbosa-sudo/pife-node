@@ -114,7 +114,7 @@ function calculatePenalties(winnerId) {
             p.hand.forEach(card => {
                 points += cardValueToNum[card.value];
             });
-            p.score -= points; // Score negativo
+            p.score -= points;
         }
     });
 }
@@ -149,7 +149,6 @@ io.on('connection', (socket) => {
     socket.on('register', (data) => {
         if (gameState.players.length >= 4) return socket.emit('alerta', 'Mesa cheia (Máx 4).');
         if (!gameState.players.find(p => p.id === socket.id)) {
-            // Adicionado Avatar e Score (Pontos Negativos)
             gameState.players.push({ id: socket.id, name: data.name, avatar: data.avatar, hand: [], hasDrawnThisTurn: false, wins: 0, score: 0 });
             io.emit('chat_system', `🟢 ${data.avatar} ${data.name} entrou na mesa.`);
         }
@@ -181,7 +180,7 @@ io.on('connection', (socket) => {
         
         gameState.status = 'playing';
         io.emit('chat_system', '🎲 O jogo começou! Boa sorte.');
-        io.emit('game_started'); // Sinal para animação e som
+        io.emit('game_started');
         updateClients();
     });
 
@@ -240,7 +239,7 @@ io.on('connection', (socket) => {
         
         if (result) {
             player.wins += 1; 
-            calculatePenalties(player.id); // Calcula os pontos negativos dos perdedores
+            calculatePenalties(player.id);
             
             io.emit('gameOver', { winner: player.name, winningSets: result.sets, discard: result.discard });
             io.emit('chat_system', `🏆 ${player.avatar} ${player.name} BATEU E GANHOU A RODADA!`);

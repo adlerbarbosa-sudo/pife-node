@@ -52,7 +52,8 @@
                 <div class="status-label">Curinga é: <span id="wildcard-text">-</span></div>
             </div>
 
-            <div class="deck-area">
+            <!-- Área do Lixo com Drop de Drag-and-Drop habilitado -->
+            <div class="deck-area" ondragover="dragOver(event)" ondrop="dropToDiscard(event)">
                 <div id="discard-container">
                     <div class="card empty" onclick="drawDiscard()">Lixo</div>
                 </div>
