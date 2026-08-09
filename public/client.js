@@ -3,6 +3,7 @@ let currentLayout = 'layout-overlap';
 let localHand = []; 
 let currentWildcardValue = null;
 let isFirstDeal = true;
+let wasMyTurn = false; // Memória para saber se o turno acabou de mudar
 
 let draggingCardIndex = null;
 let ghostElement = null;
@@ -35,6 +36,15 @@ function playSFX(type) {
         gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
         osc.start(); osc.stop(audioCtx.currentTime + 0.1);
     }
+    else if (type === 'turn') {
+        // Sino suave (Duplo Toque Harmônico)
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(659.25, audioCtx.currentTime); // Mi
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.1); // La
+        gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+    }
     else if (type === 'win') {
         osc.type = 'square';
         osc.frequency.setValueAtTime(440, audioCtx.currentTime);
@@ -48,7 +58,10 @@ function playSFX(type) {
 
 socket.on('alerta', alert);
 socket.on('play_sound', playSFX);
-socket.on('game_started', () => { isFirstDeal = true; });
+socket.on('game_started', () => { 
+    isFirstDeal = true; 
+    wasMyTurn = false; 
+});
 
 function register() {
     const name = document.getElementById('username').value;
@@ -68,6 +81,16 @@ function resetGame() { if(confirm('Resetar a mesa cancelará a partida de todos.
 function drawDeck() { socket.emit('draw_deck'); }
 function drawDiscard() { socket.emit('draw_discard'); }
 function bater() { socket.emit('bater'); }
+
+function leaveTable() {
+    if(confirm('Deseja mesmo levantar da mesa? Você voltará para a tela inicial.')) {
+        socket.emit('leaveTable');
+        document.getElementById('game-screen').style.display = 'none';
+        document.getElementById('chat-panel').style.display = 'none';
+        document.getElementById('login-screen').style.display = 'flex';
+        localHand = [];
+    }
+}
 
 function setLayout(layoutClass) {
     currentLayout = layoutClass;
@@ -97,9 +120,6 @@ function renderCardHTML(card, isWildcard = false, addAnim = false) {
     `;
 }
 
-// ==========================================
-// ARRASTE E DESCARTE BLINDADO
-// ==========================================
 function initCardDrag(e, index) {
     if (e.button !== 0 && e.type !== 'touchstart') return; 
 
@@ -273,6 +293,16 @@ function renderHand() {
     if (localHand.length > 0) isFirstDeal = false;
 }
 
+// LÓGICA DE AVISO DE TURNO
+function showTurnAlert() {
+    playSFX('turn');
+    const toast = document.getElementById('turn-toast');
+    toast.classList.add('show');
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, 2500);
+}
+
 socket.on('gameState', (state) => {
     const statusMsg = document.getElementById('status-message');
     document.getElementById('btn-start').style.display = state.status === 'waiting' ? 'block' : 'none';
@@ -280,17 +310,27 @@ socket.on('gameState', (state) => {
     currentWildcardValue = state.wildcardValue;
 
     if (state.myName) {
-        document.getElementById('player-name').innerHTML = `${state.myAvatar} ${state.myName} <span class="trophy">🏆 ${state.myWins || 0}</span> <span class="penalty">💔 ${state.myScore || 0}</span>`;
+        document.getElementById('player-name').innerHTML = `${state.myAvatar} ${state.myName} <span class="trophy">🏆 ${state.myWins || 0}</span>`;
     }
 
-    if (state.status !== 'waiting') {
-        statusMsg.innerText = (state.turn === socket.id) 
-            ? (state.hasDrawnThisTurn ? 'SUA VEZ: Descarte' : 'SUA VEZ: Compre') 
-            : 'Aguarde o oponente';
-        statusMsg.style.color = (state.turn === socket.id) ? '#c5a85b' : '#aaa';
+    // VERIFICA SE É SUA VEZ
+    let isMyTurn = (state.turn === socket.id && state.status === 'playing');
+    
+    if (isMyTurn) {
+        statusMsg.innerText = state.hasDrawnThisTurn ? 'SUA VEZ: Descarte' : 'SUA VEZ: Compre';
+        statusMsg.classList.add('my-turn-glow');
+        
+        // Se a vez acabou de passar para mim, solta o alarme visual/sonoro
+        if (!wasMyTurn) {
+            showTurnAlert();
+        }
     } else {
-        statusMsg.innerText = 'Aguardando Inicio...';
+        statusMsg.innerText = state.status === 'waiting' ? 'Aguardando Inicio...' : 'Aguarde o oponente';
+        statusMsg.classList.remove('my-turn-glow');
     }
+    
+    // Atualiza a memória de turno para não apitar toda vez que comprar carta
+    wasMyTurn = isMyTurn;
 
     document.getElementById('wildcard-container').innerHTML = renderCardHTML(state.wildcardCard, false, false);
     document.getElementById('wildcard-text').innerText = state.wildcardValue || '-';
@@ -298,12 +338,11 @@ socket.on('gameState', (state) => {
     const topDiscard = state.discardPile.length > 0 ? state.discardPile[state.discardPile.length - 1] : null;
     document.getElementById('discard-container').innerHTML = renderCardHTML(topDiscard, false, false);
 
-    // Atualiza HTML dos Oponentes com Tag de Turno
     document.getElementById('opponents-area').innerHTML = state.opponents.map(op => `
         <div class="opponent ${op.isTurn ? 'is-turn' : ''}">
             ${op.isTurn ? '<div class="turn-badge">Vez Dele</div>' : ''}
             <h3>${op.avatar} ${op.name}</h3>
-            <div><span class="trophy">🏆 ${op.wins || 0}</span> <span class="penalty">💔 ${op.score || 0}</span></div>
+            <div><span class="trophy">🏆 ${op.wins || 0}</span></div>
             <p>${op.cardCount} cartas</p>
         </div>
     `).join('');
@@ -316,6 +355,7 @@ socket.on('gameState', (state) => {
 
 socket.on('gameOver', (data) => {
     playSFX('win');
+    wasMyTurn = false;
     
     document.getElementById('game-screen').style.display = 'none';
     document.getElementById('game-over-screen').style.display = 'flex';

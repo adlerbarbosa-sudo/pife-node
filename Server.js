@@ -107,18 +107,6 @@ function validatePife(hand, wildcardValue) {
     }
 }
 
-function calculatePenalties(winnerId) {
-    gameState.players.forEach(p => {
-        if (p.id !== winnerId) {
-            let points = 0;
-            p.hand.forEach(card => {
-                points += cardValueToNum[card.value];
-            });
-            p.score -= points;
-        }
-    });
-}
-
 function updateClients() {
     const currentTurnPlayer = gameState.players[gameState.turnIndex];
     
@@ -135,25 +123,45 @@ function updateClients() {
                 avatar: op.avatar,
                 cardCount: op.hand.length,
                 wins: op.wins,
-                score: op.score,
-                isTurn: (gameState.status === 'playing' && currentTurnPlayer && op.id === currentTurnPlayer.id) // Informa quem é a vez
+                isTurn: (gameState.status === 'playing' && currentTurnPlayer && op.id === currentTurnPlayer.id)
             })),
             myName: p.name,
             myAvatar: p.avatar,
             myHand: p.hand,
             myWins: p.wins,
-            myScore: p.score,
             hasDrawnThisTurn: p.hasDrawnThisTurn
         };
         io.to(p.id).emit('gameState', publicState);
     });
 }
 
+function handlePlayerExit(socketId) {
+    const player = gameState.players.find(p => p.id === socketId);
+    if (player) io.emit('chat_system', `🔴 ${player.avatar} ${player.name} levantou da mesa.`);
+    
+    gameState.players = gameState.players.filter(p => p.id !== socketId);
+    
+    if (gameState.status === 'playing') {
+        gameState.status = 'waiting';
+        gameState.deck = [];
+        gameState.discardPile = [];
+        gameState.wildcardCard = null;
+        gameState.wildcardValue = null;
+        gameState.turnIndex = 0;
+        gameState.players.forEach(p => { p.hand = []; p.hasDrawnThisTurn = false; });
+        io.emit('chat_system', `⚠️ Jogo interrompido porque um jogador saiu.`);
+        io.emit('alerta', 'Um jogador saiu e a rodada precisou ser cancelada.');
+    } else if (gameState.players.length < 2) {
+        gameState.status = 'waiting';
+    }
+    updateClients();
+}
+
 io.on('connection', (socket) => {
     socket.on('register', (data) => {
         if (gameState.players.length >= 4) return socket.emit('alerta', 'Mesa cheia (Máx 4).');
         if (!gameState.players.find(p => p.id === socket.id)) {
-            gameState.players.push({ id: socket.id, name: data.name, avatar: data.avatar, hand: [], hasDrawnThisTurn: false, wins: 0, score: 0 });
+            gameState.players.push({ id: socket.id, name: data.name, avatar: data.avatar, hand: [], hasDrawnThisTurn: false, wins: 0 });
             io.emit('chat_system', `🟢 ${data.avatar} ${data.name} entrou na mesa.`);
         }
         updateClients();
@@ -250,7 +258,6 @@ io.on('connection', (socket) => {
         
         if (result) {
             player.wins += 1; 
-            calculatePenalties(player.id);
             
             io.emit('gameOver', { winner: player.name, winningSets: result.sets, discard: result.discard });
             io.emit('chat_system', `🏆 ${player.avatar} ${player.name} BATEU E GANHOU A RODADA!`);
@@ -275,27 +282,12 @@ io.on('connection', (socket) => {
         updateClients();
     });
 
+    socket.on('leaveTable', () => {
+        handlePlayerExit(socket.id);
+    });
+
     socket.on('disconnect', () => {
-        const player = gameState.players.find(p => p.id === socket.id);
-        if (player) io.emit('chat_system', `🔴 ${player.avatar} ${player.name} saiu da mesa.`);
-        
-        gameState.players = gameState.players.filter(p => p.id !== socket.id);
-        
-        // Regra Anti-Crash: Se alguém sair no meio, cancela a rodada.
-        if (gameState.status === 'playing') {
-            gameState.status = 'waiting';
-            gameState.deck = [];
-            gameState.discardPile = [];
-            gameState.wildcardCard = null;
-            gameState.wildcardValue = null;
-            gameState.turnIndex = 0;
-            gameState.players.forEach(p => { p.hand = []; p.hasDrawnThisTurn = false; });
-            io.emit('chat_system', `⚠️ Jogo interrompido porque um jogador desconectou.`);
-            io.emit('alerta', 'Um jogador saiu e a rodada precisou ser cancelada.');
-        } else if (gameState.players.length < 2) {
-            gameState.status = 'waiting';
-        }
-        updateClients();
+        handlePlayerExit(socket.id);
     });
 });
 

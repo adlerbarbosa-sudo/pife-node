@@ -4,6 +4,10 @@ body { background-color: #1a472a; color: #fff; overflow-x: hidden; min-height: 1
 .screen { width: 100vw; min-height: 100vh; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 20px 0; }
 .screen.com-chat { padding-right: 300px; width: 100vw; }
 
+/* TOAST DE AVISO SUTIL */
+.turn-toast { position: fixed; top: -60px; left: 50%; transform: translateX(-50%); background: #c5a85b; color: #111; padding: 12px 25px; border-radius: 30px; font-weight: bold; font-size: 1.1rem; box-shadow: 0 5px 20px rgba(0,0,0,0.6); z-index: 2000; transition: top 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); pointer-events: none; border: 2px solid #fff; }
+.turn-toast.show { top: 20px; }
+
 .login-box { background: rgba(0,0,0,0.8); padding: 40px; border-radius: 15px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 200; position: relative; max-width: 90%; }
 .login-box h1 { margin-bottom: 20px; color: #c5a85b; }
 .login-box input { padding: 10px; font-size: 1.2rem; border-radius: 5px; border: none; margin-bottom: 20px; width: 100%; text-align: center; }
@@ -17,14 +21,13 @@ button { padding: 10px 20px; font-size: 1rem; border: none; border-radius: 5px; 
 button:hover { background: #dfc374; transform: scale(1.05); }
 
 .trophy { color: #ffd700; font-weight: bold; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 10px; margin-left: 5px; font-size: 0.9em; box-shadow: inset 0 0 5px rgba(0,0,0,0.5);}
-.penalty { color: #ff4a4a; font-weight: bold; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 10px; margin-left: 5px; font-size: 0.9em; }
 
 .header { width: 100%; padding: 0 30px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;}
 .header-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;}
-#status-message { font-size: 1.2rem; font-weight: bold; padding: 5px 15px; background: rgba(0,0,0,0.5); border-radius: 20px; text-transform: uppercase; text-align: center;}
+#status-message { font-size: 1.2rem; font-weight: bold; padding: 5px 15px; background: rgba(0,0,0,0.5); border-radius: 20px; text-transform: uppercase; text-align: center; transition: 0.3s; }
+.my-turn-glow { box-shadow: 0 0 15px rgba(197, 168, 91, 0.6); background: rgba(197, 168, 91, 0.2) !important; color: #ffd700 !important; animation: pulse 2s infinite; }
 .danger-outline { background: transparent; border: 2px solid #d32f2f; color: #fff; }
 
-/* OPONENTES E INDICADOR DE TURNO */
 #opponents-area { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; width: 100%; padding: 0 10px;}
 .opponent { background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 10px; text-align: center; border: 1px solid #c5a85b; min-width: 120px; position: relative; transition: 0.3s ease; }
 .opponent h3 { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 1.1rem; margin-bottom: 5px;}
@@ -133,4 +136,6 @@ button:hover { background: #dfc374; transform: scale(1.05); }
     #btn-toggle-chat { display: block !important; background-color: #0b2e59; color: #fff; border: 1px solid #fff; }
     #btn-close-chat { display: block !important; margin-left: auto; background: transparent; color: #111; padding: 0; box-shadow: none; font-size: 1.2rem;}
     .chat-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 15px;}
+    
+    .turn-toast { font-size: 0.9rem; padding: 10px 20px; }
 }
