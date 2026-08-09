@@ -13,7 +13,7 @@ let dragStartX = 0;
 let dragStartY = 0;
 let isMoved = false;
 
-// == MEMÓRIA DE TROFÉUS (SESSÃO BLINDADA) ==
+// == MEMÓRIA DE TROFÉUS ==
 let myWins = parseInt(localStorage.getItem('pife_wins')) || 0;
 let mySessionId = localStorage.getItem('pife_sessionId');
 if (!mySessionId) {
@@ -21,8 +21,7 @@ if (!mySessionId) {
     localStorage.setItem('pife_sessionId', mySessionId);
 }
 
-// = SISTEMA ANTI-TRAVAMENTO (Vassoura do Sistema Operacional) =
-// Se a janela minimizar, apagar, receber notificação por cima ou bugar, forçamos a limpeza das cartas fantasmas.
+// = SISTEMA ANTI-TRAVAMENTO =
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') forceCleanDrag();
 });
@@ -53,18 +52,16 @@ window.onload = () => {
     document.body.className = savedTheme;
 };
 
-// RECEBE AS SALAS DO SERVIDOR E MONTA A LISTA
+// RECEBE AS SALAS (ESTILO GARTIC)
 socket.on('room_list', (list) => {
-    const container = document.getElementById('lobby-rooms');
     const ul = document.getElementById('room-list');
     ul.innerHTML = '';
     
     if(list.length === 0) {
-        container.style.display = 'none';
+        ul.innerHTML = '<li style="text-align:center; color:#ccc; font-style:italic; padding: 10px;">Nenhuma sala aberta no momento. Crie a sua!</li>';
         return;
     }
     
-    container.style.display = 'block';
     list.forEach(r => {
         const li = document.createElement('li');
         li.className = 'room-item';
@@ -75,9 +72,14 @@ socket.on('room_list', (list) => {
         li.onclick = () => {
             document.getElementById('room').value = r.id;
             if(r.hasPassword) {
-                document.getElementById('room-password').focus();
+                const pwd = prompt(`A sala [ ${r.id} ] exige senha:`);
+                if (pwd !== null) {
+                    document.getElementById('room-password').value = pwd;
+                    register();
+                }
             } else {
                 document.getElementById('room-password').value = '';
+                register();
             }
         };
         ul.appendChild(li);
@@ -223,7 +225,7 @@ function drawDiscard() { socket.emit('draw_discard'); }
 function bater() { socket.emit('bater'); }
 
 function leaveTable() {
-    if(confirm('Deseja mesmo levantar da mesa? Você voltará para a tela inicial.')) {
+    if(confirm('Deseja mesmo levantar da mesa? Você voltará para o Saguão.')) {
         socket.emit('leaveTable');
         document.getElementById('game-screen').style.display = 'none';
         document.getElementById('chat-panel').style.display = 'none';
@@ -545,7 +547,7 @@ socket.on('gameState', (state) => {
         document.getElementById('display-room-name').innerText = state.roomId;
     }
 
-    // ATUALIZA E GRAVA OS TROFÉUS NA MEMÓRIA FÍSICA
+    // Salva vitórias garantindo persistência no cache
     if (state.myName) {
         myWins = state.myWins;
         localStorage.setItem('pife_wins', myWins);
@@ -594,8 +596,6 @@ socket.on('gameState', (state) => {
 socket.on('gameOver', (data) => {
     playSFX('win');
     wasMyTurn = false;
-    
-    // Se fui eu que ganhei, o updateClients vai sincronizar meus troféus logo em seguida.
     
     document.getElementById('game-screen').style.display = 'none';
     document.getElementById('game-over-screen').style.display = 'flex';

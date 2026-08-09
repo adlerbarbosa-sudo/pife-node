@@ -43,13 +43,6 @@ function initRoom(roomId, password = '') {
     return rooms[roomId];
 }
 
-function deleteRoomIfEmpty(roomId) {
-    if (rooms[roomId] && rooms[roomId].players.length === 0) {
-        delete rooms[roomId];
-        broadcastRoomList();
-    }
-}
-
 function createDeck() {
     const suits = ['♥', '♦', '♣', '♠'];
     let deck = [];
@@ -199,14 +192,17 @@ function kickPlayer(roomId, sessionId) {
         room.status = 'waiting';
     }
     
-    deleteRoomIfEmpty(roomId);
-    updateClients(roomId);
+    if (room.players.length === 0) {
+        delete rooms[roomId];
+    } else {
+        updateClients(roomId);
+    }
     broadcastRoomList();
 }
 
 io.on('connection', (socket) => {
     
-    // Entrega a lista de salas assim que entra no site
+    // Entrega a lista de salas Gartic-style na entrada
     socket.emit('room_list', Object.values(rooms).map(r => ({
         id: r.id, count: r.players.length, hasPassword: !!r.password
     })));
@@ -215,11 +211,11 @@ io.on('connection', (socket) => {
         const roomId = data.room.trim().toUpperCase() || 'MESA1';
         let room = rooms[roomId];
 
-        // Se a sala já existe e o jogador NÃO está na sala
         if (room) {
             let existingPlayer = room.players.find(p => p.sessionId === data.sessionId);
             
             if (!existingPlayer) {
+                // Checa a senha apenas para novos jogadores entrando na sala
                 if (room.password && room.password !== data.password) {
                     return socket.emit('alerta', 'Senha incorreta para esta sala!');
                 }
@@ -227,11 +223,11 @@ io.on('connection', (socket) => {
                     return socket.emit('alerta', 'A mesa escolhida já está cheia (Máx 4).');
                 }
                 if (room.status === 'playing') {
-                    return socket.emit('alerta', 'Jogo em andamento nesta sala, aguarde na tela inicial.');
+                    return socket.emit('alerta', 'Jogo em andamento nesta sala, aguarde a rodada acabar.');
                 }
             }
         } else {
-            // Cria sala nova com senha opcional
+            // Cria a sala com a senha informada
             room = initRoom(roomId, data.password);
         }
 
@@ -246,7 +242,7 @@ io.on('connection', (socket) => {
             existingPlayer.avatar = data.avatar;
             existingPlayer.connected = true;
             
-            // Atualiza as vitórias caso ele tenha ganhado em outra aba
+            // Puxa as vitórias mais altas do Cache do navegador
             existingPlayer.wins = Math.max(existingPlayer.wins, data.wins || 0);
 
             if (room.disconnectTimers[data.sessionId]) {
@@ -262,10 +258,10 @@ io.on('connection', (socket) => {
                 avatar: data.avatar, 
                 hand: [], 
                 hasDrawnThisTurn: false, 
-                wins: data.wins || 0, // Inicia com os troféus da sessão
+                wins: data.wins || 0, // Integra o Cache ao servidor
                 connected: true
             });
-            io.to(roomId).emit('chat_system', `🟢 ${data.avatar} ${data.name} entrou na sala ${roomId}.`);
+            io.to(roomId).emit('chat_system', `🟢 ${data.avatar} ${data.name} entrou na sala.`);
             broadcastRoomList();
         }
         
@@ -440,6 +436,10 @@ io.on('connection', (socket) => {
             io.to(roomId).emit('chat_system', `🔴 ${player.avatar} ${player.name} levantou da mesa.`);
             kickPlayer(roomId, player.sessionId);
         }
+        
+        // Limpeza essencial para evitar receber mensagens de sala antiga
+        socket.leave(roomId);
+        delete socketRoomMap[socket.id];
     });
 
     socket.on('disconnect', () => {
