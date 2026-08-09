@@ -31,6 +31,7 @@
             <h2 id="player-name"></h2>
             <div id="status-message">Aguardando...</div>
             <div class="header-buttons">
+                <!-- Wrapper do Menu de Emotes -->
                 <div class="emote-wrapper">
                     <button onclick="toggleEmoteMenu()" class="action-btn outline">😀 Reagir</button>
                     <div id="emote-menu" class="emote-menu">
@@ -55,7 +56,10 @@
         <div class="table-center">
             <div class="deck-area">
                 <div id="deck-container">
-                    <div class="card back" onclick="drawDeck()">Monte</div>
+                    <div class="card back" onclick="drawDeck()">
+                        Monte
+                        <div class="deck-count-badge" id="deck-count">--</div>
+                    </div>
                 </div>
                 <button class="action-btn" onclick="drawDeck()">Comprar Monte</button>
             </div>
@@ -75,7 +79,6 @@
             </div>
         </div>
 
-        <!-- Área de Controles Limpa e Compacta -->
         <div class="layout-controls">
             <button class="action-btn highlight-btn" onclick="autoSort()">🪄 Ordenar</button>
             

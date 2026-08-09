@@ -4,7 +4,7 @@ let localHand = [];
 let currentWildcardValue = null;
 let isFirstDeal = true;
 let wasMyTurn = false; 
-let sortMode = 'suit'; // Controle do botão de organizar
+let sortMode = 'suit'; 
 
 let draggingCardIndex = null;
 let ghostElement = null;
@@ -62,11 +62,10 @@ function playSFX(type) {
         osc.start(); osc.stop(audioCtx.currentTime + 0.3);
     }
     else if (type === 'pop') {
-        // Som engraçadinho de 'Plop' para o Emoji
         osc.type = 'sine';
         osc.frequency.setValueAtTime(800, audioCtx.currentTime);
         osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
-        gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
         gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
         osc.start(); osc.stop(audioCtx.currentTime + 0.1);
     }
@@ -123,9 +122,6 @@ function leaveTable() {
     }
 }
 
-// ==========================================
-// FUNÇÕES MÁGICAS E REAÇÕES
-// ==========================================
 function toggleEmoteMenu() {
     document.getElementById('emote-menu').classList.toggle('show');
 }
@@ -135,7 +131,6 @@ function sendEmote(emoji) {
     document.getElementById('emote-menu').classList.remove('show');
 }
 
-// Fechar menu de emojis se clicar fora dele
 document.addEventListener('click', (e) => {
     const wrapper = document.querySelector('.emote-wrapper');
     if (wrapper && !wrapper.contains(e.target)) {
@@ -144,24 +139,27 @@ document.addEventListener('click', (e) => {
 });
 
 socket.on('receive_emote', (data) => {
-    playSFX('pop');
+    try { playSFX('pop'); } catch(e){} // Garante que toca som sem quebrar
+    
     const el = document.createElement('div');
     el.className = 'floating-emote';
     el.innerText = data.emote;
 
+    // Acha a div da pessoa que mandou
     let originEl = (data.id === socket.id) ? document.getElementById('player-name') : document.getElementById(`opp-${data.id}`);
 
     if (originEl) {
+        // Pega as cordenadas precisas na tela (Mesmo no Celular)
         const rect = originEl.getBoundingClientRect();
-        el.style.left = `${rect.left + rect.width / 2 - 25}px`;
+        el.style.left = `${rect.left + (rect.width / 2) - 30}px`;
         el.style.top = `${rect.top}px`;
     } else {
         el.style.left = `50%`;
-        el.style.top = `20%`;
+        el.style.top = `20px`;
     }
 
     document.body.appendChild(el);
-    setTimeout(() => el.remove(), 2500); // Limpa o DOM depois que a animação termina
+    setTimeout(() => el.remove(), 2500); 
 });
 
 function autoSort() {
@@ -175,7 +173,7 @@ function autoSort() {
             if(suitOrder[a.suit] !== suitOrder[b.suit]) return suitOrder[a.suit] - suitOrder[b.suit];
             return valOrder[a.value] - valOrder[b.value];
         });
-        sortMode = 'value'; // Prepara pro próximo clique
+        sortMode = 'value'; 
         showToast('🪄 Mão Ordenada por Naipe!');
     } else {
         localHand.sort((a,b) => {
@@ -187,7 +185,6 @@ function autoSort() {
     }
     renderHand();
 }
-// ==========================================
 
 function setLayout(layoutClass) {
     currentLayout = layoutClass;
@@ -416,6 +413,10 @@ socket.on('gameState', (state) => {
     document.getElementById('btn-start').style.display = state.status === 'waiting' ? 'block' : 'none';
     
     currentWildcardValue = state.wildcardValue;
+    
+    // Atualiza a Quantidade de Cartas do Monte
+    const deckCountEl = document.getElementById('deck-count');
+    if (deckCountEl) deckCountEl.innerText = state.deckCount || 0;
 
     if (state.myName) {
         document.getElementById('player-name').innerHTML = `${state.myAvatar} ${state.myName} <span class="trophy">🏆 ${state.myWins || 0}</span>`;

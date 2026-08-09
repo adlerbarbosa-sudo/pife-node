@@ -123,6 +123,7 @@ function updateClients() {
         const publicState = {
             status: gameState.status,
             isPaused: isPaused,
+            deckCount: gameState.deck.length, // NOVO: Contador de cartas
             discardPile: gameState.discardPile,
             wildcardCard: gameState.wildcardCard,
             wildcardValue: gameState.wildcardValue,
@@ -211,7 +212,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // NOVO: Rota das Reações Animadas (Emotes)
+    // Rota das Reações Animadas (Emotes)
     socket.on('send_emote', (emote) => {
         const player = gameState.players.find(p => p.id === socket.id);
         if (player) {
@@ -252,12 +253,12 @@ io.on('connection', (socket) => {
         
         if (gameState.deck.length === 0) {
             gameState.deck = gameState.discardPile.splice(0, gameState.discardPile.length - 1).sort(() => Math.random() - 0.5);
+            io.emit('chat_system', `♻️ O Lixo foi embaralhado de volta para o Monte!`);
         }
         const card = gameState.deck.pop();
         if(card) player.hand.push(card);
         player.hasDrawnThisTurn = true;
         
-        io.emit('chat_system', `📜 ${player.avatar} comprou do Monte.`);
         socket.emit('play_sound', 'draw');
         updateClients();
     });
@@ -294,7 +295,6 @@ io.on('connection', (socket) => {
             player.hasDrawnThisTurn = false;
             gameState.turnIndex = (gameState.turnIndex + 1) % gameState.players.length;
             
-            io.emit('chat_system', `📜 ${player.avatar} descartou uma carta.`);
             socket.emit('play_sound', 'discard');
             updateClients();
         }
