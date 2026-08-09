@@ -4,7 +4,6 @@ body { background-color: #1a472a; color: #fff; overflow-x: hidden; min-height: 1
 .screen { width: 100vw; min-height: 100vh; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 20px 0; }
 .screen.com-chat { padding-right: 300px; width: 100vw; }
 
-/* TOAST DE AVISO SUTIL */
 .turn-toast { position: fixed; top: -60px; left: 50%; transform: translateX(-50%); background: #c5a85b; color: #111; padding: 12px 25px; border-radius: 30px; font-weight: bold; font-size: 1.1rem; box-shadow: 0 5px 20px rgba(0,0,0,0.6); z-index: 2000; transition: top 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); pointer-events: none; border: 2px solid #fff; }
 .turn-toast.show { top: 20px; }
 
@@ -43,7 +42,7 @@ button:hover { background: #dfc374; transform: scale(1.05); }
 .status-label { font-size: 1.1rem; font-weight: bold; color: #c5a85b; text-transform: uppercase; }
 .status-label span { color: #fff; font-size: 1.5rem;}
 
-.card { width: 100px; height: 140px; background: #fff; border-radius: 10px; display: flex; justify-content: center; align-items: center; font-size: 2.2rem; font-weight: bold; color: #333; box-shadow: 2px 2px 10px rgba(0,0,0,0.4); cursor: pointer; user-select: none; transition: transform 0.2s, margin 0.2s; position: relative; border: 1px solid #ddd; flex-shrink: 0; }
+.card { width: 100px; height: 140px; background: #fff; border-radius: 10px; display: flex; justify-content: center; align-items: center; font-size: 2.2rem; font-weight: bold; color: #333; box-shadow: 2px 2px 10px rgba(0,0,0,0.4); cursor: pointer; user-select: none; transition: transform 0.2s, margin 0.2s; position: relative; border: 1px solid #ddd; flex-shrink: 0; touch-action: none; }
 .card:hover { transform: translateY(-10px); z-index: 50 !important; }
 .card.grouped { transform: translateY(-30px); border: 2px solid #c5a85b; } 
 .card.is-wildcard { border: 3px solid #ffeb3b; box-shadow: 0 0 20px rgba(255, 235, 59, 0.9); }

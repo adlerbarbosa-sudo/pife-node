@@ -3,7 +3,7 @@ let currentLayout = 'layout-overlap';
 let localHand = []; 
 let currentWildcardValue = null;
 let isFirstDeal = true;
-let wasMyTurn = false; // Memória para saber se o turno acabou de mudar
+let wasMyTurn = false; 
 
 let draggingCardIndex = null;
 let ghostElement = null;
@@ -37,10 +37,9 @@ function playSFX(type) {
         osc.start(); osc.stop(audioCtx.currentTime + 0.1);
     }
     else if (type === 'turn') {
-        // Sino suave (Duplo Toque Harmônico)
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(659.25, audioCtx.currentTime); // Mi
-        osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.1); // La
+        osc.frequency.setValueAtTime(659.25, audioCtx.currentTime); 
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.1); 
         gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
         gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
         osc.start(); osc.stop(audioCtx.currentTime + 0.3);
@@ -122,6 +121,11 @@ function renderCardHTML(card, isWildcard = false, addAnim = false) {
 
 function initCardDrag(e, index) {
     if (e.button !== 0 && e.type !== 'touchstart') return; 
+    if (draggingCardIndex !== null) return; // Trava contra Multi-touch (vários dedos na tela)
+
+    // LIMPEZA FORÇADA ANTI-FANTASMA (Vassoura global)
+    document.querySelectorAll('.ghost-card').forEach(el => el.remove());
+    document.querySelectorAll('.drop-placeholder').forEach(el => el.remove());
 
     draggingCardIndex = index;
     isMoved = false;
@@ -146,6 +150,7 @@ function initCardDrag(e, index) {
     window.addEventListener('touchmove', onDragMove, { passive: false });
     window.addEventListener('mouseup', onDragEnd);
     window.addEventListener('touchend', onDragEnd);
+    window.addEventListener('touchcancel', onDragEnd); // Se o celular cancelar o toque do nada (swipe)
 }
 
 function updateGhostPosition(x, y) {
@@ -222,6 +227,9 @@ function updateDropPlaceholder() {
 function onDragEnd(e) {
     if (draggingCardIndex === null) return;
 
+    // Detecta se foi um touch cancel (cancelamento forçado pelo celular)
+    const isCancel = e.type === 'touchcancel';
+
     try {
         const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
         const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
@@ -230,16 +238,22 @@ function onDragEnd(e) {
         window.removeEventListener('touchmove', onDragMove);
         window.removeEventListener('mouseup', onDragEnd);
         window.removeEventListener('touchend', onDragEnd);
+        window.removeEventListener('touchcancel', onDragEnd);
 
         document.querySelector('.deck-area:nth-child(3)')?.classList.remove('drop-target');
 
-        if (ghostElement) {
-            ghostElement.remove();
-            ghostElement = null;
-        }
+        // LIMPEZA FORÇADA AQUI TAMBÉM
+        document.querySelectorAll('.ghost-card').forEach(el => el.remove());
+        ghostElement = null;
+        document.querySelectorAll('.drop-placeholder').forEach(el => el.remove());
 
-        const placeholder = document.getElementById('drop-placeholder');
-        if (placeholder) placeholder.remove();
+        // Se o celular cancelou o evento (ex: entrou uma ligação, fez swipe sem querer)
+        if (isCancel) {
+            draggingCardIndex = null;
+            targetInsertIndex = null;
+            renderHand();
+            return;
+        }
 
         const cardObj = localHand[draggingCardIndex];
 
@@ -259,7 +273,7 @@ function onDragEnd(e) {
         }
     } catch(err) {
         console.error("Erro no dragEnd: ", err);
-        if(ghostElement) ghostElement.remove();
+        document.querySelectorAll('.ghost-card').forEach(el => el.remove());
     } finally {
         draggingCardIndex = null;
         targetInsertIndex = null;
@@ -293,7 +307,6 @@ function renderHand() {
     if (localHand.length > 0) isFirstDeal = false;
 }
 
-// LÓGICA DE AVISO DE TURNO
 function showTurnAlert() {
     playSFX('turn');
     const toast = document.getElementById('turn-toast');
@@ -313,14 +326,12 @@ socket.on('gameState', (state) => {
         document.getElementById('player-name').innerHTML = `${state.myAvatar} ${state.myName} <span class="trophy">🏆 ${state.myWins || 0}</span>`;
     }
 
-    // VERIFICA SE É SUA VEZ
     let isMyTurn = (state.turn === socket.id && state.status === 'playing');
     
     if (isMyTurn) {
         statusMsg.innerText = state.hasDrawnThisTurn ? 'SUA VEZ: Descarte' : 'SUA VEZ: Compre';
         statusMsg.classList.add('my-turn-glow');
         
-        // Se a vez acabou de passar para mim, solta o alarme visual/sonoro
         if (!wasMyTurn) {
             showTurnAlert();
         }
@@ -329,7 +340,6 @@ socket.on('gameState', (state) => {
         statusMsg.classList.remove('my-turn-glow');
     }
     
-    // Atualiza a memória de turno para não apitar toda vez que comprar carta
     wasMyTurn = isMyTurn;
 
     document.getElementById('wildcard-container').innerHTML = renderCardHTML(state.wildcardCard, false, false);
