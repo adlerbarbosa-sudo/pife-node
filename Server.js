@@ -29,7 +29,7 @@ function initRoom(roomId, password = '') {
         rooms[roomId] = {
             id: roomId,
             password: password,
-            adminSessionId: null, // Identifica o Dono da Sala
+            adminSessionId: null, 
             status: 'waiting',
             players: [],
             deck: [],
@@ -159,7 +159,7 @@ function updateClients(roomId) {
             wildcardCard: room.wildcardCard,
             wildcardValue: room.wildcardValue,
             turn: room.status === 'playing' && currentTurnPlayer ? currentTurnPlayer.id : null,
-            isAdmin: (room.adminSessionId === p.sessionId), // Informa se ele próprio é Admin
+            isAdmin: (room.adminSessionId === p.sessionId),
             opponents: room.players.filter(op => op.id !== p.id).map(op => ({
                 id: op.id,
                 sessionId: op.sessionId,
@@ -168,7 +168,7 @@ function updateClients(roomId) {
                 cardCount: op.hand.length,
                 wins: op.wins,
                 connected: op.connected,
-                isAdmin: (room.adminSessionId === op.sessionId), // Informa se o oponente é Admin
+                isAdmin: (room.adminSessionId === op.sessionId),
                 isTurn: (room.status === 'playing' && currentTurnPlayer && op.id === currentTurnPlayer.id)
             })),
             myName: p.name,
@@ -190,7 +190,6 @@ function kickPlayer(roomId, sessionId) {
     
     room.players = room.players.filter(p => p.sessionId !== sessionId);
     
-    // Transfere a Coroa se o Admin for expulso ou sair
     if (room.adminSessionId === sessionId && room.players.length > 0) {
         room.adminSessionId = room.players[0].sessionId;
     }
@@ -225,7 +224,6 @@ io.on('connection', (socket) => {
     socket.on('register', (data) => {
         const roomId = data.room.trim().toUpperCase() || 'MESA1';
         
-        // Limpeza de Fantasmas Cruzados (Se o cara deu F5 e mudou de sala, apaga ele da sala antiga)
         for (let rId in rooms) {
             if (rId !== roomId) {
                 let r = rooms[rId];
@@ -255,7 +253,7 @@ io.on('connection', (socket) => {
             }
         } else {
             room = initRoom(roomId, data.password);
-            room.adminSessionId = data.sessionId; // O criador ganha a Coroa
+            room.adminSessionId = data.sessionId; 
         }
 
         socket.join(roomId);
@@ -268,7 +266,6 @@ io.on('connection', (socket) => {
             existingPlayer.name = data.name; 
             existingPlayer.avatar = data.avatar;
             existingPlayer.connected = true;
-            
             existingPlayer.wins = Math.max(existingPlayer.wins, data.wins || 0);
 
             if (room.disconnectTimers[data.sessionId]) {
@@ -277,7 +274,6 @@ io.on('connection', (socket) => {
             }
             io.to(roomId).emit('chat_system', `✅ ${existingPlayer.avatar} ${existingPlayer.name} reconectou!`);
         } else {
-            // Se entrou numa sala já com gente e não tem admin, define ele pra garantir
             if (room.players.length === 0) room.adminSessionId = data.sessionId;
 
             room.players.push({ 
@@ -298,7 +294,6 @@ io.on('connection', (socket) => {
         updateClients(roomId);
     });
 
-    // Função Exclusiva do ADM (Expulsar travados)
     socket.on('kick_player', (targetSessionId) => {
         const roomId = socketRoomMap[socket.id];
         if (!roomId || !rooms[roomId]) return;

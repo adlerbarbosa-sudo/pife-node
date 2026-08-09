@@ -40,6 +40,7 @@ window.onload = () => {
     let savedAvatar = localStorage.getItem('pife_avatar');
     let savedRoom = localStorage.getItem('pife_room');
     let savedTheme = localStorage.getItem('pife_theme') || 'theme-green';
+    let inRoom = localStorage.getItem('pife_in_room') === 'true'; // Verifica se ele estava na mesa
     
     if (savedName) document.getElementById('username').value = savedName;
     if (savedRoom) document.getElementById('room').value = savedRoom;
@@ -48,6 +49,11 @@ window.onload = () => {
         if (radio) radio.checked = true;
     }
     document.body.className = savedTheme;
+
+    // AUTO RECONNECT MÁGICO AO DAR F5
+    if (inRoom && savedName) {
+        register();
+    }
 };
 
 socket.on('room_list', (list) => {
@@ -115,7 +121,6 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// Animação Perfeita para Oponente e pra Você
 socket.on('receive_emote', (data) => {
     try { playSFX('pop'); } catch(e){} 
     const el = document.createElement('div');
@@ -126,7 +131,6 @@ socket.on('receive_emote', (data) => {
 
     if (originEl) {
         const rect = originEl.getBoundingClientRect();
-        // Brota perfeitamente centralizado em relação ao elemento dono
         el.style.left = `${rect.left + (rect.width / 2)}px`;
         el.style.top = `${rect.top}px`;
     } else {
@@ -189,7 +193,15 @@ function playSFX(type) {
     }
 }
 
-socket.on('alerta', alert);
+// Limpa o crachá de sessão se receber erro do servidor
+socket.on('alerta', (msg) => {
+    alert(msg);
+    localStorage.removeItem('pife_in_room');
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('game-screen').style.display = 'none';
+    document.getElementById('chat-panel').style.display = 'none';
+});
+
 socket.on('play_sound', playSFX);
 socket.on('game_started', () => { 
     isFirstDeal = true; 
@@ -199,7 +211,8 @@ socket.on('game_started', () => {
 function register() {
     const name = document.getElementById('username').value;
     const room = document.getElementById('room').value || 'MESA1';
-    const password = document.getElementById('room-password').value;
+    const passwordElem = document.getElementById('room-password');
+    const password = passwordElem ? passwordElem.value : '';
     const avatar = document.querySelector('input[name="avatar"]:checked').value;
     
     if (name.trim()) {
@@ -213,14 +226,15 @@ function register() {
 }
 
 socket.on('registered_success', () => {
+    localStorage.setItem('pife_in_room', 'true'); // Marca a sessão ativa
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('game-screen').style.display = 'flex';
     document.getElementById('chat-panel').style.display = 'flex';
 });
 
-// Se o Admin te expulsar
 socket.on('kicked_by_admin', () => {
     alert('Você foi expulso pelo Administrador da sala.');
+    localStorage.removeItem('pife_in_room'); // Tira o jogador da mesa
     document.getElementById('game-screen').style.display = 'none';
     document.getElementById('chat-panel').style.display = 'none';
     document.getElementById('login-screen').style.display = 'flex';
@@ -228,7 +242,6 @@ socket.on('kicked_by_admin', () => {
     socket.emit('leaveTable');
 });
 
-// Nova Ação do Admin
 function kickPlayerReq(targetSessionId) {
     if(confirm('Tem certeza que deseja expulsar este jogador da sala?')) {
         socket.emit('kick_player', targetSessionId);
@@ -243,6 +256,7 @@ function bater() { socket.emit('bater'); }
 
 function leaveTable() {
     if(confirm('Deseja mesmo levantar da mesa? Você voltará para o Saguão.')) {
+        localStorage.removeItem('pife_in_room'); // Desloga corretamente
         socket.emit('leaveTable');
         document.getElementById('game-screen').style.display = 'none';
         document.getElementById('chat-panel').style.display = 'none';
@@ -567,7 +581,6 @@ socket.on('gameState', (state) => {
     if (state.myName) {
         myWins = state.myWins;
         localStorage.setItem('pife_wins', myWins);
-        // Exibe a Coroa de Dono da Sala ao lado do próprio nome
         document.getElementById('player-name').innerHTML = `${state.isAdmin ? '👑' : ''} ${state.myAvatar} ${state.myName} <span class="trophy">🏆 ${myWins}</span>`;
     }
 
@@ -594,7 +607,6 @@ socket.on('gameState', (state) => {
     const topDiscard = state.discardPile.length > 0 ? state.discardPile[state.discardPile.length - 1] : null;
     document.getElementById('discard-container').innerHTML = renderCardHTML(topDiscard, false, false);
 
-    // Renderiza os Oponentes com Botão de Expulsar para o Admin e a Coroa do Admin
     document.getElementById('opponents-area').innerHTML = state.opponents.map(op => `
         <div id="opp-${op.id}" class="opponent ${op.isTurn ? 'is-turn' : ''} ${!op.connected ? 'offline' : ''}">
             ${state.isAdmin ? `<button class="kick-btn" onclick="kickPlayerReq('${op.sessionId}')" title="Expulsar Jogador">❌</button>` : ''}
