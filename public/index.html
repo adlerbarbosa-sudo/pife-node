@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Pife Elegante com Curinga</title>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -15,7 +15,6 @@
         </div>
     </div>
 
-    <!-- Modificado: Adicionada uma classe com-chat -->
     <div id="game-screen" class="screen com-chat" style="display: none;">
         <div class="header">
             <h2 id="player-name"></h2>
@@ -23,6 +22,7 @@
             <div class="header-buttons">
                 <button id="btn-start" onclick="startGame()">Iniciar</button>
                 <button onclick="resetGame()" class="danger-outline">Resetar</button>
+                <button id="btn-toggle-chat" onclick="toggleMobileChat()" style="display: none;">Chat 💬</button>
             </div>
         </div>
 
@@ -52,19 +52,21 @@
         </div>
 
         <div class="layout-controls">
-            <span>Organizar Mão:</span>
+            <span class="desktop-only">Organizar Mão:</span>
             <button onclick="setLayout('layout-overlap')">Sobreposto</button>
             <button onclick="setLayout('layout-fan')">Leque</button>
             <button onclick="setLayout('layout-flat')">Aberto</button>
-            <button class="action-btn danger" onclick="bater()" style="margin-left: 20px;">BATER!</button>
+            <button class="action-btn danger btn-bater" onclick="bater()">BATER!</button>
         </div>
 
         <div id="my-hand" class="hand-area layout-overlap"></div>
     </div>
 
-    <!-- O Painel do Chat Lateral -->
     <div id="chat-panel" style="display: none;">
-        <div class="chat-header">Resenha da Mesa</div>
+        <div class="chat-header">
+            Resenha da Mesa
+            <button id="btn-close-chat" onclick="toggleMobileChat()" style="display: none;">❌</button>
+        </div>
         <div id="chat-messages"></div>
         <div id="chat-input-area">
             <input type="text" id="chat-input" placeholder="Provoque a galera..." onkeypress="handleChatKey(event)" autocomplete="off">

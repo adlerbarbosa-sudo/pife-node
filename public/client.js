@@ -142,7 +142,7 @@ function backToLobby() {
     document.getElementById('game-screen').style.display = 'flex';
 }
 
-// ======== LOGICA DO CHAT ========
+// ======== LOGICA DO CHAT E MOBILE ========
 function sendChatMessage() {
     const input = document.getElementById('chat-input');
     const msg = input.value;
@@ -156,10 +156,14 @@ function handleChatKey(e) {
     if (e.key === 'Enter') sendChatMessage();
 }
 
+function toggleMobileChat() {
+    document.getElementById('chat-panel').classList.toggle('mobile-open');
+}
+
 socket.on('chat_message', (data) => {
     const msgs = document.getElementById('chat-messages');
     msgs.innerHTML += `<div class="chat-msg"><span>${data.sender}:</span> ${data.text}</div>`;
-    msgs.scrollTop = msgs.scrollHeight; // Rola pro fim
+    msgs.scrollTop = msgs.scrollHeight; 
 });
 
 socket.on('chat_system', (msg) => {
