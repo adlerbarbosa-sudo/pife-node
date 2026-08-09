@@ -3,7 +3,11 @@ let currentLayout = 'layout-overlap';
 let localHand = []; 
 let currentWildcardValue = null;
 let isFirstDeal = true;
-let selectedTouchIndex = null; // Guarda a primeira carta clicada para reorganizar no touch
+
+// Variáveis do Sistema de Arraste Fantasma
+let draggingCardIndex = null;
+let ghostElement = null;
+let targetInsertIndex = null;
 
 // Sintetizador de Áudio Nativo
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -74,44 +78,26 @@ function toggleGroup(cardId) {
     if(cardEl) cardEl.classList.toggle('grouped');
 }
 
-// Ação de clique na carta da mão: sistema de confirmação e seleção touch
-function handleHandCardClick(cardId, cardIndex) {
-    // Se o jogador der um toque para mover de posição no celular:
-    if (selectedTouchIndex !== null) {
-        if (selectedTouchIndex !== cardIndex) {
-            const [moved] = localHand.splice(selectedTouchIndex, 1);
-            localHand.splice(cardIndex, 0, moved);
-        }
-        selectedTouchIndex = null;
-        renderHand();
-        return;
-    }
-
-    // Pergunta de confirmação antes de descartar
+function handleCardClick(cardId) {
+    // Se estava apenas arrastando, ignora o clique
+    if (ghostElement) return;
     const card = localHand.find(c => c.id === cardId);
     if (confirm(`Deseja descartar a carta ${card.value}${card.suit}?`)) {
         socket.emit('discard', cardId);
-    } else {
-        // Se cancelou, assume que o jogador talvez queira mover de posição essa carta
-        selectedTouchIndex = cardIndex;
-        renderHand();
     }
 }
 
 function getSuitColor(suit) { return (suit === '♥' || suit === '♦') ? 'red' : 'black'; }
 
-function renderCardHTML(card, action = '', isWildcard = false, isDraggable = true, addAnim = false, isSelected = false) {
+function renderCardHTML(card, action = '', isWildcard = false, addAnim = false) {
     if (!card) return `<div class="card empty">Vazio</div>`;
     const wcClass = isWildcard ? 'is-wildcard' : '';
     const animClass = addAnim ? 'animate-deal' : '';
-    const selectedClass = isSelected ? 'selected-touch' : '';
-    const dragAttrs = isDraggable ? `draggable="true" ondragstart="dragStart(event, '${card.id}')" ondragover="dragOver(event)" ondrop="drop(event, '${card.id}')"` : '';
     
     return `
-        <div id="card-${card.id}" class="card ${getSuitColor(card.suit)} ${wcClass} ${animClass} ${selectedClass}" 
+        <div id="card-${card.id}" class="card ${getSuitColor(card.suit)} ${wcClass} ${animClass}" 
              onclick="${action}" oncontextmenu="toggleGroup('${card.id}'); return false;"
-             ondblclick="toggleGroup('${card.id}')"
-             ${dragAttrs}>
+             ondblclick="toggleGroup('${card.id}')">
             <div class="card-mini">${card.value}<br>${card.suit}</div>
             <div class="card-center">${card.suit}</div>
             <div class="card-mini-bottom">${card.value}<br>${card.suit}</div>
@@ -119,37 +105,126 @@ function renderCardHTML(card, action = '', isWildcard = false, isDraggable = tru
     `;
 }
 
-// Drag e Drop no PC
-let draggedId = null;
-function dragStart(e, id) { draggedId = id; }
-function dragOver(e) { e.preventDefault(); }
-function drop(e, targetId) {
-    e.preventDefault();
-    if (draggedId === targetId) return;
-    const fromIndex = localHand.findIndex(c => c.id === draggedId);
-    const toIndex = localHand.findIndex(c => c.id === targetId);
-    if(fromIndex < 0 || toIndex < 0) return;
-    const [moved] = localHand.splice(fromIndex, 1);
-    localHand.splice(toIndex, 0, moved);
-    renderHand();
+// ==========================================
+// SISTEMA DE ARRASTE FANTASMA (CUSTOM DRAG)
+// ==========================================
+function initCardDrag(e, index) {
+    if (e.button !== 0 && e.type !== 'touchstart') return; // Apenas clique esquerdo ou toque
+    
+    draggingCardIndex = index;
+    const cardObj = localHand[index];
+    const cardEl = document.getElementById(`card-${cardObj.id}`);
+    
+    // Cria o Rastro Fantasma
+    ghostElement = cardEl.cloneNode(true);
+    ghostElement.id = 'ghost-card';
+    ghostElement.classList.add('ghost-card');
+    document.body.appendChild(ghostElement);
+    
+    cardEl.classList.add('dragging-origin');
+    
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    updateGhostPosition(clientX, clientY);
+    
+    window.addEventListener('mousemove', onDragMove);
+    window.addEventListener('touchmove', onDragMove, { passive: false });
+    window.addEventListener('mouseup', onDragEnd);
+    window.addEventListener('touchend', onDragEnd);
 }
 
-// Soltar a carta diretamente em cima da pilha do Lixo para descartar
-function dropToDiscard(e) {
-    e.preventDefault();
-    if (draggedId) {
-        socket.emit('discard', draggedId);
-        draggedId = null;
+function updateGhostPosition(x, y) {
+    if (ghostElement) {
+        ghostElement.style.left = `${x - 50}px`;
+        ghostElement.style.top = `${y - 70}px`;
     }
 }
+
+function onDragMove(e) {
+    if (draggingCardIndex === null) return;
+    if (e.preventDefault && e.cancelable) e.preventDefault();
+
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    updateGhostPosition(clientX, clientY);
+
+    // Calcula a posição de inserção baseada nas cartas visíveis
+    const handArea = document.getElementById('my-hand');
+    const cardsElements = Array.from(handArea.querySelectorAll('.card:not(.ghost-card)'));
+    
+    let newInsertIndex = cardsElements.length;
+    for (let i = 0; i < cardsElements.length; i++) {
+        const rect = cardsElements[i].getBoundingClientRect();
+        const cardMiddleX = rect.left + rect.width / 2;
+        if (clientX < cardMiddleX) {
+            newInsertIndex = i;
+            break;
+        }
+    }
+
+    if (newInsertIndex !== targetInsertIndex) {
+        targetInsertIndex = newInsertIndex;
+        updateDropPlaceholder();
+    }
+}
+
+function updateDropPlaceholder() {
+    const handArea = document.getElementById('my-hand');
+    let placeholder = document.getElementById('drop-placeholder');
+    
+    if (!placeholder) {
+        placeholder = document.createElement('div');
+        placeholder.id = 'drop-placeholder';
+        placeholder.className = 'drop-placeholder';
+    }
+    
+    const cardsElements = Array.from(handArea.children).filter(el => el.id !== 'drop-placeholder');
+    if (targetInsertIndex >= cardsElements.length) {
+        handArea.appendChild(placeholder);
+    } else {
+        handArea.insertBefore(placeholder, cardsElements[targetInsertIndex]);
+    }
+}
+
+function onDragEnd(e) {
+    if (draggingCardIndex === null) return;
+
+    window.removeEventListener('mousemove', onDragMove);
+    window.removeEventListener('touchmove', onDragMove);
+    window.removeEventListener('mouseup', onDragEnd);
+    window.removeEventListener('touchend', onDragEnd);
+
+    if (ghostElement) {
+        ghostElement.remove();
+        ghostElement = null;
+    }
+
+    const placeholder = document.getElementById('drop-placeholder');
+    if (placeholder) placeholder.remove();
+
+    // Executa a reordenação se a posição mudou
+    if (targetInsertIndex !== null) {
+        const [movedCard] = localHand.splice(draggingCardIndex, 1);
+        let finalIndex = targetInsertIndex;
+        if (draggingCardIndex < targetInsertIndex) finalIndex--; // Ajusta o índice após remoção
+        
+        localHand.splice(finalIndex, 0, movedCard);
+    }
+
+    draggingCardIndex = null;
+    targetInsertIndex = null;
+    renderHand();
+}
+// ==========================================
 
 function renderHand() {
     const handArea = document.getElementById('my-hand');
     handArea.className = `hand-area ${currentLayout}`;
     handArea.innerHTML = localHand.map((card, index) => {
         let isWildcard = (card.value === currentWildcardValue);
-        let isSelected = (selectedTouchIndex === index);
-        let html = renderCardHTML(card, `handleHandCardClick('${card.id}', ${index})`, isWildcard, true, isFirstDeal, isSelected);
+        let html = renderCardHTML(card, `handleCardClick('${card.id}')`, isWildcard, isFirstDeal);
         
         if(currentLayout === 'layout-fan') {
             let offset = index - (localHand.length / 2);
@@ -158,7 +233,16 @@ function renderHand() {
         }
         return html;
     }).join('');
-    
+
+    // Acopla o detector de arraste em cada carta
+    localHand.forEach((card, index) => {
+        const cardEl = document.getElementById(`card-${card.id}`);
+        if (cardEl) {
+            cardEl.onmousedown = (e) => initCardDrag(e, index);
+            cardEl.ontouchstart = (e) => initCardDrag(e, index);
+        }
+    });
+
     if (localHand.length > 0) isFirstDeal = false;
 }
 
