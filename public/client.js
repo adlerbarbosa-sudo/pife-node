@@ -13,15 +13,29 @@ let dragStartX = 0;
 let dragStartY = 0;
 let isMoved = false;
 
-// REGISTRO PWA (Service Worker)
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(err => console.log("PWA SW falhou", err));
-}
-
+// == MEMÓRIA DE TROFÉUS (SESSÃO BLINDADA) ==
+let myWins = parseInt(localStorage.getItem('pife_wins')) || 0;
 let mySessionId = localStorage.getItem('pife_sessionId');
 if (!mySessionId) {
     mySessionId = Math.random().toString(36).substr(2, 10);
     localStorage.setItem('pife_sessionId', mySessionId);
+}
+
+// = SISTEMA ANTI-TRAVAMENTO (Vassoura do Sistema Operacional) =
+// Se a janela minimizar, apagar, receber notificação por cima ou bugar, forçamos a limpeza das cartas fantasmas.
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') forceCleanDrag();
+});
+window.addEventListener('blur', forceCleanDrag);
+window.addEventListener('error', forceCleanDrag);
+
+function forceCleanDrag() {
+    draggingCardIndex = null;
+    targetInsertIndex = null;
+    document.querySelectorAll('.ghost-card').forEach(el => el.remove());
+    document.querySelectorAll('.drop-placeholder').forEach(el => el.remove());
+    ghostElement = null;
+    renderHand();
 }
 
 window.onload = () => {
@@ -39,6 +53,37 @@ window.onload = () => {
     document.body.className = savedTheme;
 };
 
+// RECEBE AS SALAS DO SERVIDOR E MONTA A LISTA
+socket.on('room_list', (list) => {
+    const container = document.getElementById('lobby-rooms');
+    const ul = document.getElementById('room-list');
+    ul.innerHTML = '';
+    
+    if(list.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+    
+    container.style.display = 'block';
+    list.forEach(r => {
+        const li = document.createElement('li');
+        li.className = 'room-item';
+        li.innerHTML = `
+            <span>${r.hasPassword ? '🔒' : '🟢'} <b>${r.id}</b></span>
+            <span class="room-badge">${r.count}/4 Jogs</span>
+        `;
+        li.onclick = () => {
+            document.getElementById('room').value = r.id;
+            if(r.hasPassword) {
+                document.getElementById('room-password').focus();
+            } else {
+                document.getElementById('room-password').value = '';
+            }
+        };
+        ul.appendChild(li);
+    });
+});
+
 function changeTheme(themeName) {
     document.body.className = themeName;
     localStorage.setItem('pife_theme', themeName);
@@ -46,8 +91,50 @@ function changeTheme(themeName) {
 }
 
 function toggleThemeMenu() {
+    const em = document.getElementById('emote-menu');
+    if(em) em.classList.remove('show'); 
     document.getElementById('theme-menu').classList.toggle('show');
 }
+
+function toggleEmoteMenu() {
+    const tm = document.getElementById('theme-menu');
+    if(tm) tm.classList.remove('show'); 
+    document.getElementById('emote-menu').classList.toggle('show');
+}
+
+function sendEmote(emoji) {
+    socket.emit('send_emote', emoji);
+    document.getElementById('emote-menu').classList.remove('show');
+}
+
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.emote-wrapper')) {
+        const em = document.getElementById('emote-menu');
+        const tm = document.getElementById('theme-menu');
+        if(em) em.classList.remove('show');
+        if(tm) tm.classList.remove('show');
+    }
+});
+
+socket.on('receive_emote', (data) => {
+    try { playSFX('pop'); } catch(e){} 
+    const el = document.createElement('div');
+    el.className = 'floating-emote';
+    el.innerText = data.emote;
+    let originEl = (data.id === socket.id) ? document.getElementById('player-name') : document.getElementById(`opp-${data.id}`);
+
+    if (originEl) {
+        const rect = originEl.getBoundingClientRect();
+        el.style.left = `${rect.left + (rect.width / 2) - 30}px`;
+        el.style.top = `${rect.top}px`;
+    } else {
+        el.style.left = `50%`;
+        el.style.top = `20px`;
+    }
+
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2500); 
+});
 
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 function playSFX(type) {
@@ -109,7 +196,8 @@ socket.on('game_started', () => {
 
 function register() {
     const name = document.getElementById('username').value;
-    const room = document.getElementById('room').value;
+    const room = document.getElementById('room').value || 'MESA1';
+    const password = document.getElementById('room-password').value;
     const avatar = document.querySelector('input[name="avatar"]:checked').value;
     
     if (name.trim()) {
@@ -117,7 +205,7 @@ function register() {
         localStorage.setItem('pife_room', room);
         localStorage.setItem('pife_avatar', avatar);
         
-        socket.emit('register', { sessionId: mySessionId, name, avatar, room });
+        socket.emit('register', { sessionId: mySessionId, name, avatar, room, password, wins: myWins });
         if(audioCtx.state === 'suspended') audioCtx.resume();
     }
 }
@@ -135,7 +223,7 @@ function drawDiscard() { socket.emit('draw_discard'); }
 function bater() { socket.emit('bater'); }
 
 function leaveTable() {
-    if(confirm('Deseja mesmo levantar da mesa?')) {
+    if(confirm('Deseja mesmo levantar da mesa? Você voltará para a tela inicial.')) {
         socket.emit('leaveTable');
         document.getElementById('game-screen').style.display = 'none';
         document.getElementById('chat-panel').style.display = 'none';
@@ -143,42 +231,6 @@ function leaveTable() {
         localHand = [];
     }
 }
-
-function toggleEmoteMenu() { document.getElementById('emote-menu').classList.toggle('show'); }
-function sendEmote(emoji) {
-    socket.emit('send_emote', emoji);
-    document.getElementById('emote-menu').classList.remove('show');
-}
-
-document.addEventListener('click', (e) => {
-    const wrapper = document.querySelector('.emote-wrapper');
-    if (wrapper && !wrapper.contains(e.target)) {
-        const em = document.getElementById('emote-menu');
-        const tm = document.getElementById('theme-menu');
-        if(em) em.classList.remove('show');
-        if(tm) tm.classList.remove('show');
-    }
-});
-
-socket.on('receive_emote', (data) => {
-    try { playSFX('pop'); } catch(e){} 
-    const el = document.createElement('div');
-    el.className = 'floating-emote';
-    el.innerText = data.emote;
-    let originEl = (data.id === socket.id) ? document.getElementById('player-name') : document.getElementById(`opp-${data.id}`);
-
-    if (originEl) {
-        const rect = originEl.getBoundingClientRect();
-        el.style.left = `${rect.left + (rect.width / 2) - 30}px`;
-        el.style.top = `${rect.top}px`;
-    } else {
-        el.style.left = `50%`;
-        el.style.top = `20px`;
-    }
-
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 2500); 
-});
 
 const cardValToNum = { 'A':1, '2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13 };
 const suitOrder = { '♥': 1, '♦': 2, '♣': 3, '♠': 4 };
@@ -217,38 +269,42 @@ function isValidSetForSort(group, wildcardValue) {
 
 function autoSort() {
     if(localHand.length === 0) return;
+    try {
+        let sets = [];
+        let remaining = [...localHand];
+        let found = true;
 
-    let sets = [];
-    let remaining = [...localHand];
-    let found = true;
-
-    while(found && remaining.length >= 3) {
-        found = false;
-        for(let i=0; i<remaining.length; i++) {
-            for(let j=i+1; j<remaining.length; j++) {
-                for(let k=j+1; k<remaining.length; k++) {
-                    if(isValidSetForSort([remaining[i], remaining[j], remaining[k]], currentWildcardValue)) {
-                        sets.push(remaining[i], remaining[j], remaining[k]);
-                        let toRemove = [remaining[i].id, remaining[j].id, remaining[k].id];
-                        remaining = remaining.filter(c => !toRemove.includes(c.id));
-                        found = true;
-                        break;
+        while(found && remaining.length >= 3) {
+            found = false;
+            for(let i=0; i<remaining.length; i++) {
+                for(let j=i+1; j<remaining.length; j++) {
+                    for(let k=j+1; k<remaining.length; k++) {
+                        if(isValidSetForSort([remaining[i], remaining[j], remaining[k]], currentWildcardValue)) {
+                            sets.push(remaining[i], remaining[j], remaining[k]);
+                            let toRemove = [remaining[i].id, remaining[j].id, remaining[k].id];
+                            remaining = remaining.filter(c => !toRemove.includes(c.id));
+                            found = true;
+                            break;
+                        }
                     }
+                    if(found) break;
                 }
                 if(found) break;
             }
-            if(found) break;
         }
+
+        remaining.sort((a,b) => {
+            if(suitOrder[a.suit] !== suitOrder[b.suit]) return suitOrder[a.suit] - suitOrder[b.suit];
+            return cardValToNum[a.value] - cardValToNum[b.value];
+        });
+
+        localHand = [...sets, ...remaining];
+        showToast('🪄 Mão Inteligentemente Ordenada!', true);
+        renderHand();
+    } catch(err) {
+        console.error("Erro no autoSort", err);
+        showToast('Falha ao ordenar.', false);
     }
-
-    remaining.sort((a,b) => {
-        if(suitOrder[a.suit] !== suitOrder[b.suit]) return suitOrder[a.suit] - suitOrder[b.suit];
-        return cardValToNum[a.value] - cardValToNum[b.value];
-    });
-
-    localHand = [...sets, ...remaining];
-    showToast('🪄 Mão Inteligentemente Ordenada!', true);
-    renderHand();
 }
 
 function setLayout(layoutClass) {
@@ -283,8 +339,7 @@ function initCardDrag(e, index) {
     if (e.button !== 0 && e.type !== 'touchstart') return; 
     if (draggingCardIndex !== null) return; 
 
-    document.querySelectorAll('.ghost-card').forEach(el => el.remove());
-    document.querySelectorAll('.drop-placeholder').forEach(el => el.remove());
+    forceCleanDrag();
 
     draggingCardIndex = index;
     isMoved = false;
@@ -429,7 +484,7 @@ function onDragEnd(e) {
         }
     } catch(err) {
         console.error("Erro no dragEnd: ", err);
-        document.querySelectorAll('.ghost-card').forEach(el => el.remove());
+        forceCleanDrag();
     } finally {
         draggingCardIndex = null;
         targetInsertIndex = null;
@@ -438,29 +493,33 @@ function onDragEnd(e) {
 }
 
 function renderHand() {
-    const handArea = document.getElementById('my-hand');
-    handArea.className = `hand-area ${currentLayout}`;
-    handArea.innerHTML = localHand.map((card, index) => {
-        let isWildcard = (card.value === currentWildcardValue);
-        let html = renderCardHTML(card, isWildcard, isFirstDeal);
-        
-        if(currentLayout === 'layout-fan') {
-            let offset = index - (localHand.length / 2);
-            let rot = offset * 8; 
-            html = html.replace('class="card', `style="transform: rotate(${rot}deg);" class="card`);
-        }
-        return html;
-    }).join('');
+    try {
+        const handArea = document.getElementById('my-hand');
+        handArea.className = `hand-area ${currentLayout}`;
+        handArea.innerHTML = localHand.map((card, index) => {
+            let isWildcard = (card.value === currentWildcardValue);
+            let html = renderCardHTML(card, isWildcard, isFirstDeal);
+            
+            if(currentLayout === 'layout-fan') {
+                let offset = index - (localHand.length / 2);
+                let rot = offset * 8; 
+                html = html.replace('class="card', `style="transform: rotate(${rot}deg);" class="card`);
+            }
+            return html;
+        }).join('');
 
-    localHand.forEach((card, index) => {
-        const cardEl = document.getElementById(`card-${card.id}`);
-        if (cardEl) {
-            cardEl.onmousedown = (e) => initCardDrag(e, index);
-            cardEl.ontouchstart = (e) => initCardDrag(e, index);
-        }
-    });
+        localHand.forEach((card, index) => {
+            const cardEl = document.getElementById(`card-${card.id}`);
+            if (cardEl) {
+                cardEl.onmousedown = (e) => initCardDrag(e, index);
+                cardEl.ontouchstart = (e) => initCardDrag(e, index);
+            }
+        });
 
-    if (localHand.length > 0) isFirstDeal = false;
+        if (localHand.length > 0) isFirstDeal = false;
+    } catch (err) {
+        console.error("Erro ao renderizar a mão: ", err);
+    }
 }
 
 function showToast(msg, playSound = false) {
@@ -486,8 +545,11 @@ socket.on('gameState', (state) => {
         document.getElementById('display-room-name').innerText = state.roomId;
     }
 
+    // ATUALIZA E GRAVA OS TROFÉUS NA MEMÓRIA FÍSICA
     if (state.myName) {
-        document.getElementById('player-name').innerHTML = `${state.myAvatar} ${state.myName} <span class="trophy">🏆 ${state.myWins || 0}</span>`;
+        myWins = state.myWins;
+        localStorage.setItem('pife_wins', myWins);
+        document.getElementById('player-name').innerHTML = `${state.myAvatar} ${state.myName} <span class="trophy">🏆 ${myWins}</span>`;
     }
 
     if (state.isPaused) {
@@ -532,6 +594,8 @@ socket.on('gameState', (state) => {
 socket.on('gameOver', (data) => {
     playSFX('win');
     wasMyTurn = false;
+    
+    // Se fui eu que ganhei, o updateClients vai sincronizar meus troféus logo em seguida.
     
     document.getElementById('game-screen').style.display = 'none';
     document.getElementById('game-over-screen').style.display = 'flex';

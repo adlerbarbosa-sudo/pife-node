@@ -1,9 +1,8 @@
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; }
 
-/* === SISTEMA DE TEMAS (SKINS DA MESA) === */
 :root {
-    --bg-color: #1a472a; /* Verde Padrão */
-    --accent-color: #c5a85b; /* Dourado */
+    --bg-color: #1a472a; 
+    --accent-color: #c5a85b; 
 }
 body.theme-green { --bg-color: #1a472a; --accent-color: #c5a85b; }
 body.theme-blue { --bg-color: #0b2e59; --accent-color: #8bb3e0; }
@@ -26,6 +25,12 @@ body { background-color: var(--bg-color); color: #fff; overflow-x: hidden; min-h
 .avatar-selection label { cursor: pointer; opacity: 0.5; transition: 0.2s; }
 .avatar-selection input { display: none; }
 .avatar-selection input:checked + label, .avatar-selection label:hover { opacity: 1; transform: scale(1.2); }
+
+/* LISTA DE SALAS */
+.room-list { list-style: none; padding: 0; max-height: 150px; overflow-y: auto; margin-top: 10px; }
+.room-item { background: rgba(255,255,255,0.1); padding: 8px 12px; margin-bottom: 5px; border-radius: 5px; display: flex; justify-content: space-between; cursor: pointer; transition: 0.2s; border: 1px solid transparent; font-size: 1rem;}
+.room-item:hover { border-color: var(--accent-color); background: rgba(197, 168, 91, 0.2); }
+.room-badge { background: var(--bg-color); padding: 2px 8px; border-radius: 10px; font-size: 0.8rem; font-weight: bold;}
 
 button { padding: 10px 20px; font-size: 1rem; border: none; border-radius: 5px; background: var(--accent-color); color: #111; cursor: pointer; font-weight: bold; transition: 0.2s; box-shadow: 2px 2px 5px rgba(0,0,0,0.3); }
 button:hover { filter: brightness(1.2); transform: scale(1.05); }

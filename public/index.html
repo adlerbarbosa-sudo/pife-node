@@ -23,10 +23,24 @@
                 <label><input type="radio" name="avatar" value="😎"> 😎</label>
                 <label><input type="radio" name="avatar" value="🤡"> 🤡</label>
             </div>
+            
             <input type="text" id="username" placeholder="Seu apelido..." autocomplete="off">
-            <!-- NOVO: Campo de Sala -->
-            <input type="text" id="room" placeholder="Nome da Sala (Opcional)" autocomplete="off">
-            <button onclick="register()">Entrar na Mesa</button>
+            
+            <hr style="border-color:var(--accent-color); margin: 15px 0; opacity: 0.3;">
+            <h3 style="margin-bottom: 10px; color: #fff;">Saguão de Mesas</h3>
+            
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <input type="text" id="room" placeholder="Nome da Sala (Livre)" autocomplete="off" style="margin-bottom: 0;">
+                <input type="password" id="room-password" placeholder="Senha (Opcional)" autocomplete="off" style="margin-bottom: 0;">
+            </div>
+            
+            <button onclick="register()" style="width: 100%; font-size: 1.2rem; padding: 12px;">Jogar</button>
+
+            <!-- NOVO: Lista de Salas Ativas -->
+            <div id="lobby-rooms" style="margin-top: 20px; text-align: left; background: rgba(0,0,0,0.5); padding: 15px; border-radius: 10px; display: none;">
+                <h4 style="margin-bottom: 10px; color: var(--accent-color);">Mesas Abertas Agora:</h4>
+                <ul id="room-list" class="room-list"></ul>
+            </div>
         </div>
     </div>
 
@@ -37,14 +51,13 @@
             <div id="status-message">Aguardando...</div>
             
             <div class="header-buttons">
-                <!-- Temas da Mesa -->
                 <div class="emote-wrapper">
                     <button onclick="toggleThemeMenu()" class="action-btn outline">🎨 Mesa</button>
                     <div id="theme-menu" class="emote-menu">
-                        <button onclick="changeTheme('theme-green')" style="background: #1a472a;">Verde</button>
-                        <button onclick="changeTheme('theme-blue')" style="background: #0b2e59; color: white;">Azul</button>
-                        <button onclick="changeTheme('theme-red')" style="background: #7b1113; color: white;">Vermelho</button>
-                        <button onclick="changeTheme('theme-black')" style="background: #111111; color: white;">Preto</button>
+                        <button onclick="changeTheme('theme-green')" style="background: #1a472a; padding: 5px; border:none; border-radius:5px; color:white;">Verde</button>
+                        <button onclick="changeTheme('theme-blue')" style="background: #0b2e59; padding: 5px; border:none; border-radius:5px; color:white;">Azul</button>
+                        <button onclick="changeTheme('theme-red')" style="background: #7b1113; padding: 5px; border:none; border-radius:5px; color:white;">Vermelho</button>
+                        <button onclick="changeTheme('theme-black')" style="background: #111111; padding: 5px; border:none; border-radius:5px; color:white;">Preto</button>
                     </div>
                 </div>
 

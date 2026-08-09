@@ -9,17 +9,26 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// === SISTEMA DE SALAS (ROOMS) ===
 const rooms = {};
-const socketRoomMap = {}; // Descobre em qual sala um socket estava se a net dele cair
+const socketRoomMap = {}; 
 
 const cardValues = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 const cardValueToNum = { 'A':1, '2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13 };
 
-function initRoom(roomId) {
+function broadcastRoomList() {
+    const list = Object.values(rooms).map(r => ({
+        id: r.id,
+        count: r.players.length,
+        hasPassword: !!r.password
+    }));
+    io.emit('room_list', list);
+}
+
+function initRoom(roomId, password = '') {
     if (!rooms[roomId]) {
         rooms[roomId] = {
             id: roomId,
+            password: password,
             status: 'waiting',
             players: [],
             deck: [],
@@ -29,8 +38,16 @@ function initRoom(roomId) {
             turnIndex: 0,
             disconnectTimers: {}
         };
+        broadcastRoomList();
     }
     return rooms[roomId];
+}
+
+function deleteRoomIfEmpty(roomId) {
+    if (rooms[roomId] && rooms[roomId].players.length === 0) {
+        delete rooms[roomId];
+        broadcastRoomList();
+    }
 }
 
 function createDeck() {
@@ -181,17 +198,46 @@ function kickPlayer(roomId, sessionId) {
     } else if (room.players.length < 2) {
         room.status = 'waiting';
     }
+    
+    deleteRoomIfEmpty(roomId);
     updateClients(roomId);
+    broadcastRoomList();
 }
 
 io.on('connection', (socket) => {
     
+    // Entrega a lista de salas assim que entra no site
+    socket.emit('room_list', Object.values(rooms).map(r => ({
+        id: r.id, count: r.players.length, hasPassword: !!r.password
+    })));
+
     socket.on('register', (data) => {
         const roomId = data.room.trim().toUpperCase() || 'MESA1';
+        let room = rooms[roomId];
+
+        // Se a sala já existe e o jogador NÃO está na sala
+        if (room) {
+            let existingPlayer = room.players.find(p => p.sessionId === data.sessionId);
+            
+            if (!existingPlayer) {
+                if (room.password && room.password !== data.password) {
+                    return socket.emit('alerta', 'Senha incorreta para esta sala!');
+                }
+                if (room.players.length >= 4) {
+                    return socket.emit('alerta', 'A mesa escolhida já está cheia (Máx 4).');
+                }
+                if (room.status === 'playing') {
+                    return socket.emit('alerta', 'Jogo em andamento nesta sala, aguarde na tela inicial.');
+                }
+            }
+        } else {
+            // Cria sala nova com senha opcional
+            room = initRoom(roomId, data.password);
+        }
+
         socket.join(roomId);
         socketRoomMap[socket.id] = roomId;
         
-        let room = initRoom(roomId);
         let existingPlayer = room.players.find(p => p.sessionId === data.sessionId);
 
         if (existingPlayer) {
@@ -199,6 +245,9 @@ io.on('connection', (socket) => {
             existingPlayer.name = data.name; 
             existingPlayer.avatar = data.avatar;
             existingPlayer.connected = true;
+            
+            // Atualiza as vitórias caso ele tenha ganhado em outra aba
+            existingPlayer.wins = Math.max(existingPlayer.wins, data.wins || 0);
 
             if (room.disconnectTimers[data.sessionId]) {
                 clearTimeout(room.disconnectTimers[data.sessionId]);
@@ -206,9 +255,6 @@ io.on('connection', (socket) => {
             }
             io.to(roomId).emit('chat_system', `✅ ${existingPlayer.avatar} ${existingPlayer.name} reconectou!`);
         } else {
-            if (room.players.length >= 4) return socket.emit('alerta', 'A mesa escolhida já está cheia (Máx 4).');
-            if (room.status === 'playing') return socket.emit('alerta', 'Jogo em andamento nesta sala, aguarde na tela inicial.');
-            
             room.players.push({ 
                 id: socket.id, 
                 sessionId: data.sessionId,
@@ -216,10 +262,11 @@ io.on('connection', (socket) => {
                 avatar: data.avatar, 
                 hand: [], 
                 hasDrawnThisTurn: false, 
-                wins: 0,
+                wins: data.wins || 0, // Inicia com os troféus da sessão
                 connected: true
             });
             io.to(roomId).emit('chat_system', `🟢 ${data.avatar} ${data.name} entrou na sala ${roomId}.`);
+            broadcastRoomList();
         }
         
         socket.emit('registered_success');
@@ -355,7 +402,7 @@ io.on('connection', (socket) => {
         
         if (result) {
             player.wins += 1; 
-            io.to(roomId).emit('gameOver', { winner: player.name, winningSets: result.sets, discard: result.discard });
+            io.to(roomId).emit('gameOver', { winner: player.name, winningSets: result.sets, discard: result.discard, newWins: player.wins });
             io.to(roomId).emit('chat_system', `🏆 ${player.avatar} ${player.name} BATEU E GANHOU A RODADA!`);
             room.status = 'waiting';
             room.players.forEach(p => p.hand = []);
@@ -412,7 +459,7 @@ io.on('connection', (socket) => {
             
             updateClients(roomId);
         }
-        delete socketRoomMap[socket.id]; // Limpeza da memória
+        delete socketRoomMap[socket.id]; 
     });
 });
 
