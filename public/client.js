@@ -4,6 +4,7 @@ let localHand = [];
 let currentWildcardValue = null;
 let isFirstDeal = true;
 let wasMyTurn = false; 
+let sortMode = 'suit'; // Controle do botão de organizar
 
 let draggingCardIndex = null;
 let ghostElement = null;
@@ -11,6 +12,22 @@ let targetInsertIndex = null;
 let dragStartX = 0;
 let dragStartY = 0;
 let isMoved = false;
+
+let mySessionId = localStorage.getItem('pife_sessionId');
+if (!mySessionId) {
+    mySessionId = Math.random().toString(36).substr(2, 10);
+    localStorage.setItem('pife_sessionId', mySessionId);
+}
+
+window.onload = () => {
+    let savedName = localStorage.getItem('pife_name');
+    let savedAvatar = localStorage.getItem('pife_avatar');
+    if (savedName) document.getElementById('username').value = savedName;
+    if (savedAvatar) {
+        const radio = document.querySelector(`input[name="avatar"][value="${savedAvatar}"]`);
+        if (radio) radio.checked = true;
+    }
+};
 
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 function playSFX(type) {
@@ -44,6 +61,15 @@ function playSFX(type) {
         gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
         osc.start(); osc.stop(audioCtx.currentTime + 0.3);
     }
+    else if (type === 'pop') {
+        // Som engraçadinho de 'Plop' para o Emoji
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+        gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+    }
     else if (type === 'win') {
         osc.type = 'square';
         osc.frequency.setValueAtTime(440, audioCtx.currentTime);
@@ -67,13 +93,19 @@ function register() {
     const avatar = document.querySelector('input[name="avatar"]:checked').value;
     
     if (name.trim()) {
-        socket.emit('register', { name, avatar });
-        document.getElementById('login-screen').style.display = 'none';
-        document.getElementById('game-screen').style.display = 'flex';
-        document.getElementById('chat-panel').style.display = 'flex';
+        localStorage.setItem('pife_name', name);
+        localStorage.setItem('pife_avatar', avatar);
+        
+        socket.emit('register', { sessionId: mySessionId, name, avatar });
         if(audioCtx.state === 'suspended') audioCtx.resume();
     }
 }
+
+socket.on('registered_success', () => {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('game-screen').style.display = 'flex';
+    document.getElementById('chat-panel').style.display = 'flex';
+});
 
 function startGame() { socket.emit('startGame'); }
 function resetGame() { if(confirm('Resetar a mesa cancelará a partida de todos. Continuar?')) socket.emit('resetGame'); }
@@ -90,6 +122,72 @@ function leaveTable() {
         localHand = [];
     }
 }
+
+// ==========================================
+// FUNÇÕES MÁGICAS E REAÇÕES
+// ==========================================
+function toggleEmoteMenu() {
+    document.getElementById('emote-menu').classList.toggle('show');
+}
+
+function sendEmote(emoji) {
+    socket.emit('send_emote', emoji);
+    document.getElementById('emote-menu').classList.remove('show');
+}
+
+// Fechar menu de emojis se clicar fora dele
+document.addEventListener('click', (e) => {
+    const wrapper = document.querySelector('.emote-wrapper');
+    if (wrapper && !wrapper.contains(e.target)) {
+        document.getElementById('emote-menu').classList.remove('show');
+    }
+});
+
+socket.on('receive_emote', (data) => {
+    playSFX('pop');
+    const el = document.createElement('div');
+    el.className = 'floating-emote';
+    el.innerText = data.emote;
+
+    let originEl = (data.id === socket.id) ? document.getElementById('player-name') : document.getElementById(`opp-${data.id}`);
+
+    if (originEl) {
+        const rect = originEl.getBoundingClientRect();
+        el.style.left = `${rect.left + rect.width / 2 - 25}px`;
+        el.style.top = `${rect.top}px`;
+    } else {
+        el.style.left = `50%`;
+        el.style.top = `20%`;
+    }
+
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2500); // Limpa o DOM depois que a animação termina
+});
+
+function autoSort() {
+    if(localHand.length === 0) return;
+    
+    const suitOrder = { '♥': 1, '♦': 2, '♣': 3, '♠': 4 };
+    const valOrder = { 'A':1, '2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13 };
+
+    if(sortMode === 'suit') {
+        localHand.sort((a,b) => {
+            if(suitOrder[a.suit] !== suitOrder[b.suit]) return suitOrder[a.suit] - suitOrder[b.suit];
+            return valOrder[a.value] - valOrder[b.value];
+        });
+        sortMode = 'value'; // Prepara pro próximo clique
+        showToast('🪄 Mão Ordenada por Naipe!');
+    } else {
+        localHand.sort((a,b) => {
+            if(valOrder[a.value] !== valOrder[b.value]) return valOrder[a.value] - valOrder[b.value];
+            return suitOrder[a.suit] - suitOrder[b.suit];
+        });
+        sortMode = 'suit';
+        showToast('🪄 Mão Ordenada por Número!');
+    }
+    renderHand();
+}
+// ==========================================
 
 function setLayout(layoutClass) {
     currentLayout = layoutClass;
@@ -121,9 +219,8 @@ function renderCardHTML(card, isWildcard = false, addAnim = false) {
 
 function initCardDrag(e, index) {
     if (e.button !== 0 && e.type !== 'touchstart') return; 
-    if (draggingCardIndex !== null) return; // Trava contra Multi-touch (vários dedos na tela)
+    if (draggingCardIndex !== null) return; 
 
-    // LIMPEZA FORÇADA ANTI-FANTASMA (Vassoura global)
     document.querySelectorAll('.ghost-card').forEach(el => el.remove());
     document.querySelectorAll('.drop-placeholder').forEach(el => el.remove());
 
@@ -150,7 +247,7 @@ function initCardDrag(e, index) {
     window.addEventListener('touchmove', onDragMove, { passive: false });
     window.addEventListener('mouseup', onDragEnd);
     window.addEventListener('touchend', onDragEnd);
-    window.addEventListener('touchcancel', onDragEnd); // Se o celular cancelar o toque do nada (swipe)
+    window.addEventListener('touchcancel', onDragEnd);
 }
 
 function updateGhostPosition(x, y) {
@@ -227,7 +324,6 @@ function updateDropPlaceholder() {
 function onDragEnd(e) {
     if (draggingCardIndex === null) return;
 
-    // Detecta se foi um touch cancel (cancelamento forçado pelo celular)
     const isCancel = e.type === 'touchcancel';
 
     try {
@@ -242,12 +338,10 @@ function onDragEnd(e) {
 
         document.querySelector('.deck-area:nth-child(3)')?.classList.remove('drop-target');
 
-        // LIMPEZA FORÇADA AQUI TAMBÉM
         document.querySelectorAll('.ghost-card').forEach(el => el.remove());
         ghostElement = null;
         document.querySelectorAll('.drop-placeholder').forEach(el => el.remove());
 
-        // Se o celular cancelou o evento (ex: entrou uma ligação, fez swipe sem querer)
         if (isCancel) {
             draggingCardIndex = null;
             targetInsertIndex = null;
@@ -307,9 +401,10 @@ function renderHand() {
     if (localHand.length > 0) isFirstDeal = false;
 }
 
-function showTurnAlert() {
-    playSFX('turn');
+function showToast(msg, playSound = false) {
+    if (playSound) playSFX('turn');
     const toast = document.getElementById('turn-toast');
+    toast.innerText = msg;
     toast.classList.add('show');
     setTimeout(() => {
         toast.classList.remove('show');
@@ -326,21 +421,22 @@ socket.on('gameState', (state) => {
         document.getElementById('player-name').innerHTML = `${state.myAvatar} ${state.myName} <span class="trophy">🏆 ${state.myWins || 0}</span>`;
     }
 
-    let isMyTurn = (state.turn === socket.id && state.status === 'playing');
-    
-    if (isMyTurn) {
-        statusMsg.innerText = state.hasDrawnThisTurn ? 'SUA VEZ: Descarte' : 'SUA VEZ: Compre';
-        statusMsg.classList.add('my-turn-glow');
-        
-        if (!wasMyTurn) {
-            showTurnAlert();
-        }
-    } else {
-        statusMsg.innerText = state.status === 'waiting' ? 'Aguardando Inicio...' : 'Aguarde o oponente';
+    if (state.isPaused) {
+        statusMsg.innerText = "JOGO PAUSADO";
+        statusMsg.style.color = "#ff4a4a";
         statusMsg.classList.remove('my-turn-glow');
+    } else {
+        let isMyTurn = (state.turn === socket.id && state.status === 'playing');
+        if (isMyTurn) {
+            statusMsg.innerText = state.hasDrawnThisTurn ? 'SUA VEZ: Descarte' : 'SUA VEZ: Compre';
+            statusMsg.classList.add('my-turn-glow');
+            if (!wasMyTurn) showToast('✨ É a sua vez de jogar!', true);
+        } else {
+            statusMsg.innerText = state.status === 'waiting' ? 'Aguardando Inicio...' : 'Aguarde o oponente';
+            statusMsg.classList.remove('my-turn-glow');
+        }
+        wasMyTurn = isMyTurn;
     }
-    
-    wasMyTurn = isMyTurn;
 
     document.getElementById('wildcard-container').innerHTML = renderCardHTML(state.wildcardCard, false, false);
     document.getElementById('wildcard-text').innerText = state.wildcardValue || '-';
@@ -349,8 +445,9 @@ socket.on('gameState', (state) => {
     document.getElementById('discard-container').innerHTML = renderCardHTML(topDiscard, false, false);
 
     document.getElementById('opponents-area').innerHTML = state.opponents.map(op => `
-        <div class="opponent ${op.isTurn ? 'is-turn' : ''}">
-            ${op.isTurn ? '<div class="turn-badge">Vez Dele</div>' : ''}
+        <div id="opp-${op.id}" class="opponent ${op.isTurn ? 'is-turn' : ''} ${!op.connected ? 'offline' : ''}">
+            ${op.isTurn && op.connected ? '<div class="turn-badge">Vez Dele</div>' : ''}
+            ${!op.connected ? '<div class="offline-tag">Caiu...</div>' : ''}
             <h3>${op.avatar} ${op.name}</h3>
             <div><span class="trophy">🏆 ${op.wins || 0}</span></div>
             <p>${op.cardCount} cartas</p>

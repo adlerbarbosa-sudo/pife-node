@@ -8,8 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 </head>
 <body>
-    <!-- Notificação Flutuante Sutil -->
-    <div id="turn-toast" class="turn-toast">✨ É a sua vez de jogar!</div>
+    <div id="turn-toast" class="turn-toast"></div>
 
     <div id="login-screen" class="screen">
         <div class="login-box">
@@ -32,6 +31,19 @@
             <h2 id="player-name"></h2>
             <div id="status-message">Aguardando...</div>
             <div class="header-buttons">
+                <!-- Wrapper do Menu de Emotes -->
+                <div class="emote-wrapper">
+                    <button onclick="toggleEmoteMenu()" class="action-btn outline">😀 Reagir</button>
+                    <div id="emote-menu" class="emote-menu">
+                        <span onclick="sendEmote('😂')">😂</span>
+                        <span onclick="sendEmote('😡')">😡</span>
+                        <span onclick="sendEmote('🍻')">🍻</span>
+                        <span onclick="sendEmote('💔')">💔</span>
+                        <span onclick="sendEmote('😎')">😎</span>
+                        <span onclick="sendEmote('😭')">😭</span>
+                    </div>
+                </div>
+
                 <button id="btn-start" onclick="startGame()">Iniciar</button>
                 <button onclick="resetGame()" class="danger-outline">Resetar</button>
                 <button onclick="leaveTable()" class="danger-outline">Sair da Mesa</button>
@@ -65,7 +77,10 @@
         </div>
 
         <div class="layout-controls">
-            <span class="desktop-only">Organizar Mão:</span>
+            <!-- Botão Mágico de Organização -->
+            <button class="action-btn highlight-btn" onclick="autoSort()">🪄 Ordenar</button>
+            
+            <span class="desktop-only" style="margin-left: 15px;">Visual:</span>
             <button onclick="setLayout('layout-overlap')">Sobreposto</button>
             <button onclick="setLayout('layout-fan')">Leque</button>
             <button onclick="setLayout('layout-flat')">Aberto</button>

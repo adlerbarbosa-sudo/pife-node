@@ -4,7 +4,7 @@ body { background-color: #1a472a; color: #fff; overflow-x: hidden; min-height: 1
 .screen { width: 100vw; min-height: 100vh; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 20px 0; }
 .screen.com-chat { padding-right: 300px; width: 100vw; }
 
-.turn-toast { position: fixed; top: -60px; left: 50%; transform: translateX(-50%); background: #c5a85b; color: #111; padding: 12px 25px; border-radius: 30px; font-weight: bold; font-size: 1.1rem; box-shadow: 0 5px 20px rgba(0,0,0,0.6); z-index: 2000; transition: top 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); pointer-events: none; border: 2px solid #fff; }
+.turn-toast { position: fixed; top: -60px; left: 50%; transform: translateX(-50%); background: #c5a85b; color: #111; padding: 12px 25px; border-radius: 30px; font-weight: bold; font-size: 1.1rem; box-shadow: 0 5px 20px rgba(0,0,0,0.6); z-index: 2000; transition: top 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); pointer-events: none; border: 2px solid #fff; text-align: center; }
 .turn-toast.show { top: 20px; }
 
 .login-box { background: rgba(0,0,0,0.8); padding: 40px; border-radius: 15px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); z-index: 200; position: relative; max-width: 90%; }
@@ -19,16 +19,38 @@ body { background-color: #1a472a; color: #fff; overflow-x: hidden; min-height: 1
 button { padding: 10px 20px; font-size: 1rem; border: none; border-radius: 5px; background: #c5a85b; color: #111; cursor: pointer; font-weight: bold; transition: 0.2s; box-shadow: 2px 2px 5px rgba(0,0,0,0.3); }
 button:hover { background: #dfc374; transform: scale(1.05); }
 
+.highlight-btn { background: #ffeb3b; color: #111; border: 2px solid #fff; animation: pulse 2s infinite; }
+.highlight-btn:hover { background: #fff59d; transform: scale(1.1); }
+.outline { background: transparent; border: 2px solid #c5a85b; color: #c5a85b; }
+
 .trophy { color: #ffd700; font-weight: bold; background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 10px; margin-left: 5px; font-size: 0.9em; box-shadow: inset 0 0 5px rgba(0,0,0,0.5);}
 
 .header { width: 100%; padding: 0 30px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;}
-.header-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;}
+.header-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; align-items: center;}
 #status-message { font-size: 1.2rem; font-weight: bold; padding: 5px 15px; background: rgba(0,0,0,0.5); border-radius: 20px; text-transform: uppercase; text-align: center; transition: 0.3s; }
 .my-turn-glow { box-shadow: 0 0 15px rgba(197, 168, 91, 0.6); background: rgba(197, 168, 91, 0.2) !important; color: #ffd700 !important; animation: pulse 2s infinite; }
 .danger-outline { background: transparent; border: 2px solid #d32f2f; color: #fff; }
 
+/* EMOTES (REAÇÕES) */
+.emote-wrapper { position: relative; display: inline-block; }
+.emote-menu { display: none; position: absolute; top: 115%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.9); border: 2px solid #c5a85b; border-radius: 10px; padding: 10px; gap: 10px; z-index: 500; box-shadow: 0 5px 15px rgba(0,0,0,0.5); min-width: 220px; justify-content: center; flex-wrap: wrap;}
+.emote-menu.show { display: flex; }
+.emote-menu span { font-size: 2rem; cursor: pointer; transition: 0.2s; user-select: none; }
+.emote-menu span:hover { transform: scale(1.3); }
+
+.floating-emote { position: absolute; font-size: 4rem; pointer-events: none; z-index: 9999; animation: floatUp 2.5s ease-out forwards; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6)); }
+@keyframes floatUp {
+    0% { transform: translateY(0) scale(0.5); opacity: 0; }
+    20% { transform: translateY(-40px) scale(1.2); opacity: 1; }
+    80% { transform: translateY(-100px) scale(1); opacity: 1; }
+    100% { transform: translateY(-150px) scale(0.8); opacity: 0; }
+}
+
 #opponents-area { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; width: 100%; padding: 0 10px;}
 .opponent { background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 10px; text-align: center; border: 1px solid #c5a85b; min-width: 120px; position: relative; transition: 0.3s ease; }
+.opponent.offline { opacity: 0.5; filter: grayscale(1); border-color: #555; }
+.offline-tag { color: #ff4a4a; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 5px; animation: pulse 1s infinite;}
+
 .opponent h3 { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 1.1rem; margin-bottom: 5px;}
 
 .opponent.is-turn { border: 2px solid #ffeb3b; box-shadow: 0 0 15px rgba(255, 235, 59, 0.5); background: rgba(255, 235, 59, 0.1); transform: scale(1.05); }

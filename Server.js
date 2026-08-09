@@ -19,6 +19,8 @@ let gameState = {
     turnIndex: 0
 };
 
+let disconnectTimers = {}; // Guarda os cronômetros de quem caiu
+
 const cardValues = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 const cardValueToNum = { 'A':1, '2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13 };
 
@@ -107,12 +109,20 @@ function validatePife(hand, wildcardValue) {
     }
 }
 
+function isGamePaused() {
+    return gameState.players.some(p => !p.connected);
+}
+
 function updateClients() {
     const currentTurnPlayer = gameState.players[gameState.turnIndex];
+    const isPaused = isGamePaused();
     
     gameState.players.forEach(p => {
+        if (!p.connected) return; // Não tenta enviar pra quem caiu
+        
         const publicState = {
             status: gameState.status,
+            isPaused: isPaused,
             discardPile: gameState.discardPile,
             wildcardCard: gameState.wildcardCard,
             wildcardValue: gameState.wildcardValue,
@@ -123,6 +133,7 @@ function updateClients() {
                 avatar: op.avatar,
                 cardCount: op.hand.length,
                 wins: op.wins,
+                connected: op.connected,
                 isTurn: (gameState.status === 'playing' && currentTurnPlayer && op.id === currentTurnPlayer.id)
             })),
             myName: p.name,
@@ -135,11 +146,11 @@ function updateClients() {
     });
 }
 
-function handlePlayerExit(socketId) {
-    const player = gameState.players.find(p => p.id === socketId);
-    if (player) io.emit('chat_system', `🔴 ${player.avatar} ${player.name} levantou da mesa.`);
+function kickPlayer(sessionId) {
+    const player = gameState.players.find(p => p.sessionId === sessionId);
+    if (!player) return;
     
-    gameState.players = gameState.players.filter(p => p.id !== socketId);
+    gameState.players = gameState.players.filter(p => p.sessionId !== sessionId);
     
     if (gameState.status === 'playing') {
         gameState.status = 'waiting';
@@ -149,8 +160,7 @@ function handlePlayerExit(socketId) {
         gameState.wildcardValue = null;
         gameState.turnIndex = 0;
         gameState.players.forEach(p => { p.hand = []; p.hasDrawnThisTurn = false; });
-        io.emit('chat_system', `⚠️ Jogo interrompido porque um jogador saiu.`);
-        io.emit('alerta', 'Um jogador saiu e a rodada precisou ser cancelada.');
+        io.emit('chat_system', `💔 ${player.avatar} ${player.name} não retornou a tempo. Jogo cancelado.`);
     } else if (gameState.players.length < 2) {
         gameState.status = 'waiting';
     }
@@ -158,12 +168,42 @@ function handlePlayerExit(socketId) {
 }
 
 io.on('connection', (socket) => {
+    
+    // NOVO REGISTRO COM SESSÃO
     socket.on('register', (data) => {
-        if (gameState.players.length >= 4) return socket.emit('alerta', 'Mesa cheia (Máx 4).');
-        if (!gameState.players.find(p => p.id === socket.id)) {
-            gameState.players.push({ id: socket.id, name: data.name, avatar: data.avatar, hand: [], hasDrawnThisTurn: false, wins: 0 });
+        let existingPlayer = gameState.players.find(p => p.sessionId === data.sessionId);
+
+        if (existingPlayer) {
+            // JOGADOR RECONECTANDO
+            existingPlayer.id = socket.id;
+            existingPlayer.name = data.name; 
+            existingPlayer.avatar = data.avatar;
+            existingPlayer.connected = true;
+
+            if (disconnectTimers[data.sessionId]) {
+                clearTimeout(disconnectTimers[data.sessionId]);
+                delete disconnectTimers[data.sessionId];
+            }
+            io.emit('chat_system', `✅ ${existingPlayer.avatar} ${existingPlayer.name} reconectou e voltou pra mesa!`);
+        } else {
+            // JOGADOR NOVO
+            if (gameState.players.length >= 4) return socket.emit('alerta', 'Mesa cheia (Máx 4).');
+            if (gameState.status === 'playing') return socket.emit('alerta', 'Jogo em andamento, aguarde na tela inicial.');
+            
+            gameState.players.push({ 
+                id: socket.id, 
+                sessionId: data.sessionId,
+                name: data.name, 
+                avatar: data.avatar, 
+                hand: [], 
+                hasDrawnThisTurn: false, 
+                wins: 0,
+                connected: true
+            });
             io.emit('chat_system', `🟢 ${data.avatar} ${data.name} entrou na mesa.`);
         }
+        
+        socket.emit('registered_success');
         updateClients();
     });
 
@@ -177,6 +217,7 @@ io.on('connection', (socket) => {
     socket.on('startGame', () => {
         if (gameState.players.length < 2) return socket.emit('alerta', 'Mínimo de 2 jogadores!');
         if (gameState.status === 'playing') return;
+        if (isGamePaused()) return socket.emit('alerta', 'Aguarde todos reconectarem!');
 
         gameState.deck = createDeck();
         gameState.wildcardCard = gameState.deck.pop(); 
@@ -198,9 +239,12 @@ io.on('connection', (socket) => {
 
     socket.on('draw_deck', () => {
         if (gameState.status !== 'playing') return socket.emit('alerta', 'O jogo não começou!');
+        if (isGamePaused()) return socket.emit('alerta', 'Jogo pausado: alguém caiu!');
+        
         const player = gameState.players[gameState.turnIndex];
         if (!player || player.id !== socket.id) return socket.emit('alerta', 'Não é seu turno!');
         if (player.hasDrawnThisTurn) return socket.emit('alerta', 'Você já comprou.');
+        
         if (gameState.deck.length === 0) {
             gameState.deck = gameState.discardPile.splice(0, gameState.discardPile.length - 1).sort(() => Math.random() - 0.5);
         }
@@ -215,6 +259,8 @@ io.on('connection', (socket) => {
 
     socket.on('draw_discard', () => {
         if (gameState.status !== 'playing') return socket.emit('alerta', 'O jogo não começou!');
+        if (isGamePaused()) return socket.emit('alerta', 'Jogo pausado: alguém caiu!');
+        
         const player = gameState.players[gameState.turnIndex];
         if (!player || player.id !== socket.id) return socket.emit('alerta', 'Não é seu turno!');
         if (player.hasDrawnThisTurn) return socket.emit('alerta', 'Você já comprou.');
@@ -230,7 +276,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('discard', (cardId) => {
-        if (gameState.status !== 'playing') return;
+        if (gameState.status !== 'playing' || isGamePaused()) return;
+        
         const player = gameState.players[gameState.turnIndex];
         if (!player || player.id !== socket.id) return socket.emit('alerta', 'Não é seu turno!');
         if (!player.hasDrawnThisTurn) return socket.emit('alerta', 'Compre antes de descartar.');
@@ -249,7 +296,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('bater', () => {
-        if (gameState.status !== 'playing') return;
+        if (gameState.status !== 'playing' || isGamePaused()) return;
+        
         const player = gameState.players.find(p => p.id === socket.id);
         if (!player) return;
         if (gameState.players[gameState.turnIndex]?.id !== socket.id) return socket.emit('alerta', 'Bata no seu turno!');
@@ -258,7 +306,6 @@ io.on('connection', (socket) => {
         
         if (result) {
             player.wins += 1; 
-            
             io.emit('gameOver', { winner: player.name, winningSets: result.sets, discard: result.discard });
             io.emit('chat_system', `🏆 ${player.avatar} ${player.name} BATEU E GANHOU A RODADA!`);
             gameState.status = 'waiting';
@@ -283,11 +330,28 @@ io.on('connection', (socket) => {
     });
 
     socket.on('leaveTable', () => {
-        handlePlayerExit(socket.id);
+        const player = gameState.players.find(p => p.id === socket.id);
+        if (player) {
+            if (disconnectTimers[player.sessionId]) clearTimeout(disconnectTimers[player.sessionId]);
+            io.emit('chat_system', `🔴 ${player.avatar} ${player.name} levantou e saiu da mesa.`);
+            kickPlayer(player.sessionId);
+        }
     });
 
     socket.on('disconnect', () => {
-        handlePlayerExit(socket.id);
+        const player = gameState.players.find(p => p.id === socket.id);
+        if (player) {
+            player.connected = false;
+            
+            // Avisa a todos que a internet do cara caiu, mas dá 60s pra voltar
+            io.emit('chat_system', `⚠️ A conexão de ${player.name} caiu! Pausando a mesa (60s)...`);
+            
+            disconnectTimers[player.sessionId] = setTimeout(() => {
+                kickPlayer(player.sessionId);
+            }, 60000); // 60 segundos de tolerância
+            
+            updateClients();
+        }
     });
 });
 
