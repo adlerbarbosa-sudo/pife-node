@@ -44,13 +44,6 @@ function initRoom(roomId, password = '') {
     return rooms[roomId];
 }
 
-function deleteRoomIfEmpty(roomId) {
-    if (rooms[roomId] && rooms[roomId].players.length === 0) {
-        delete rooms[roomId];
-        broadcastRoomList();
-    }
-}
-
 function createDeck() {
     const suits = ['♥', '♦', '♣', '♠'];
     let deck = [];
@@ -69,6 +62,7 @@ function getNextValue(val) {
     return cardValues[(idx + 1) % cardValues.length];
 }
 
+// REGRA ESTRITA DE TRINCAS: Naipes devem ser diferentes
 function isValidSet(group, wildcardValue) {
     let normals = group.filter(c => c.value !== wildcardValue);
     let wildcards = group.length - normals.length;
@@ -77,7 +71,7 @@ function isValidSet(group, wildcardValue) {
 
     if (wildcards === 1) {
         let [n1, n2] = normals;
-        if (n1.value === n2.value) return n1.suit !== n2.suit; // Trinca de naipes diferentes
+        if (n1.value === n2.value) return n1.suit !== n2.suit; 
         if (n1.suit === n2.suit) {
             let v1 = cardValueToNum[n1.value];
             let v2 = cardValueToNum[n2.value];
@@ -242,7 +236,6 @@ io.on('connection', (socket) => {
 
         if (room) {
             let existingPlayer = room.players.find(p => p.sessionId === data.sessionId);
-            
             if (!existingPlayer) {
                 if (room.password && room.password !== data.password) {
                     return socket.emit('login_error', 'Senha incorreta para esta sala!');

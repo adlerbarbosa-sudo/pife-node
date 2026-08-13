@@ -3,8 +3,10 @@ let currentLayout = 'layout-overlap';
 let localHand = []; 
 let currentWildcardValue = null;
 let isFirstDeal = true;
+
+let amIPlaying = false; 
+let hasDrawnThisTurn = false;
 let wasMyTurn = false; 
-let sortMode = 'suit'; 
 
 let draggingCardIndex = null;
 let ghostElement = null;
@@ -20,7 +22,7 @@ if (!mySessionId) {
     localStorage.setItem('pife_sessionId', mySessionId);
 }
 
-// = POP-UPS CUSTOMIZADOS E ELEGANTES =
+// POP-UPS ELEGANTES
 function customAlert(msg) {
     document.getElementById('custom-modal-title').innerText = 'Aviso';
     document.getElementById('custom-modal-message').innerText = msg;
@@ -55,21 +57,21 @@ function customConfirm(msg, onYes) {
     document.getElementById('custom-modal').classList.add('show');
 }
 
-// Eventos de Limpeza Anti-Trava
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') forceCleanDrag();
-});
-window.addEventListener('blur', forceCleanDrag);
-window.addEventListener('error', forceCleanDrag);
-
+// LIMPEZA SEGURA (Não reconstrói a mão atoa para não bugar o touch)
 function forceCleanDrag() {
     draggingCardIndex = null;
     targetInsertIndex = null;
     document.querySelectorAll('.ghost-card').forEach(el => el.remove());
     document.querySelectorAll('.drop-placeholder').forEach(el => el.remove());
+    document.querySelectorAll('.dragging-origin').forEach(el => el.classList.remove('dragging-origin'));
     ghostElement = null;
-    renderHand();
 }
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { forceCleanDrag(); renderHand(); }
+});
+window.addEventListener('blur', () => { forceCleanDrag(); renderHand(); });
+window.addEventListener('error', () => { forceCleanDrag(); renderHand(); });
 
 window.onload = () => {
     let savedName = localStorage.getItem('pife_name');
@@ -226,6 +228,7 @@ function playSFX(type) {
     }
 }
 
+// Tratamento de falha grave
 socket.on('login_error', (msg) => {
     customAlert(msg);
     localStorage.removeItem('pife_in_room');
@@ -234,8 +237,9 @@ socket.on('login_error', (msg) => {
     document.getElementById('chat-panel').style.display = 'none';
 });
 
+// AVISO IN-GAME (Sem expulsão)
 socket.on('alerta', (msg) => {
-    showToast(msg, true);
+    customAlert(msg);
 });
 
 socket.on('play_sound', playSFX);
@@ -309,6 +313,7 @@ function leaveTable() {
 const cardValToNum = { 'A':1, '2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13 };
 const suitOrder = { '♥': 1, '♦': 2, '♣': 3, '♠': 4 };
 
+// REGRA TRINCA
 function isValidSetForSort(group, wildcardValue) {
     let normals = group.filter(c => c.value !== wildcardValue);
     let wildcards = group.length - normals.length;
@@ -396,13 +401,22 @@ function toggleGroup(cardId) {
 
 function getSuitColor(suit) { return (suit === '♥' || suit === '♦') ? 'red' : 'black'; }
 
-function renderCardHTML(card, isWildcard = false, addAnim = false) {
+// RENDERIZAÇÃO DA CARTA COM INJEÇÃO DIRETA DE STYLE (Conserta sumiço no PC)
+function renderCardHTML(card, isWildcard = false, addAnim = false, index = 0, layout = '') {
     if (!card) return `<div class="card empty">Vazio</div>`;
     const wcClass = isWildcard ? 'is-wildcard' : '';
     const animClass = addAnim ? 'animate-deal' : '';
     
+    let customStyle = `z-index: ${index};`;
+    if (layout === 'layout-fan') {
+        let offset = index - (localHand.length / 2);
+        let rot = offset * 8; 
+        customStyle += ` transform: rotate(${rot}deg);`;
+    }
+
     return `
         <div id="card-${card.id}" class="card ${getSuitColor(card.suit)} ${wcClass} ${animClass}"
+             style="${customStyle}"
              oncontextmenu="toggleGroup('${card.id}'); return false;"
              ondblclick="toggleGroup('${card.id}')">
             <div class="card-mini">${card.value}<br>${card.suit}</div>
@@ -412,16 +426,16 @@ function renderCardHTML(card, isWildcard = false, addAnim = false) {
     `;
 }
 
-// === LÓGICA DE ARRASTO BLINDADA (MOBILE) ===
 function initCardDrag(e, index) {
     if (e.button !== 0 && e.type !== 'touchstart') return; 
     
-    // MATA QUALQUER AÇÃO NATIVA DO NAVEGADOR PARA NÃO CANCELAR O DRAG
-    if (e.cancelable) e.preventDefault();
-    
+    if (e.type === 'mousedown') e.preventDefault();
     if (draggingCardIndex !== null) return; 
 
-    forceCleanDrag();
+    // Limpa fantasmas residuais de forma segura (Sem renderHand)
+    document.querySelectorAll('.ghost-card').forEach(el => el.remove());
+    document.querySelectorAll('.drop-placeholder').forEach(el => el.remove());
+    document.querySelectorAll('.dragging-origin').forEach(el => el.classList.remove('dragging-origin'));
 
     draggingCardIndex = index;
     isMoved = false;
@@ -437,6 +451,7 @@ function initCardDrag(e, index) {
     ghostElement = cardEl.cloneNode(true);
     ghostElement.id = 'ghost-card';
     ghostElement.classList.add('ghost-card');
+    ghostElement.style.transform = 'scale(1.1) rotate(4deg)'; 
     document.body.appendChild(ghostElement);
     
     cardEl.classList.add('dragging-origin');
@@ -466,8 +481,7 @@ function isOverDiscardArea(x, y) {
 function onDragMove(e) {
     if (draggingCardIndex === null) return;
 
-    // IMPEDE O SCROLL DA PÁGINA ENQUANTO ARRASTA A CARTA
-    if (e.cancelable) e.preventDefault();
+    if (e.cancelable) e.preventDefault(); // BLOQUEIA SCROLL NATIVO NO ARRASTO
 
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
@@ -553,7 +567,6 @@ function onDragEnd(e) {
         const cardObj = localHand[draggingCardIndex];
 
         if (isMoved && isOverDiscardArea(clientX, clientY)) {
-            // VERIFICA SE PODE DESCARTAR
             if (!amIPlaying) {
                 showToast('Não é sua vez de jogar!', true);
             } else if (!hasDrawnThisTurn) {
@@ -563,13 +576,11 @@ function onDragEnd(e) {
             }
         } 
         else if (!isMoved) {
-            // CLIQUE SIMPLES
             if (amIPlaying && hasDrawnThisTurn) {
                 customConfirm(`Deseja descartar a carta ${cardObj.value}${cardObj.suit}?`, () => {
                     socket.emit('discard', cardObj.id);
                 });
             } else {
-                // Fora de turno: Clique apenas sobe a carta para organizar
                 toggleGroup(cardObj.id);
             }
         } 
@@ -590,25 +601,14 @@ function onDragEnd(e) {
 }
 
 function renderHand() {
-    // NÃO ATUALIZA A TELA SE O JOGADOR ESTIVER ARRASTANDO A CARTA
-    if (draggingCardIndex !== null) return;
+    if (draggingCardIndex !== null) return; // Não atrapalha o arrasto do mobile
 
     try {
         const handArea = document.getElementById('my-hand');
         handArea.className = `hand-area ${currentLayout}`;
         handArea.innerHTML = localHand.map((card, index) => {
             let isWildcard = (card.value === currentWildcardValue);
-            let html = renderCardHTML(card, isWildcard, isFirstDeal);
-            
-            // O Z-INDEX EVITA QUE O NAIPE DA CARTA DE TRÁS CUBRA A DA FRENTE
-            html = html.replace('class="card', `style="z-index: ${index};" class="card`);
-
-            if(currentLayout === 'layout-fan') {
-                let offset = index - (localHand.length / 2);
-                let rot = offset * 8; 
-                html = html.replace('class="card', `style="z-index: ${index}; transform: rotate(${rot}deg);" class="card`);
-            }
-            return html;
+            return renderCardHTML(card, isWildcard, isFirstDeal, index, currentLayout);
         }).join('');
 
         localHand.forEach((card, index) => {
@@ -623,6 +623,16 @@ function renderHand() {
     } catch (err) {
         console.error("Erro ao renderizar a mão: ", err);
     }
+}
+
+function showToast(msg, playSound = false) {
+    if (playSound) playSFX('turn');
+    const toast = document.getElementById('turn-toast');
+    toast.innerText = msg;
+    toast.classList.add('show');
+    setTimeout(() => {
+        toast.classList.remove('show');
+    }, 2500);
 }
 
 socket.on('gameState', (state) => {
