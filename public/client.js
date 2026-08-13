@@ -3,8 +3,10 @@ let currentLayout = 'layout-overlap';
 let localHand = []; 
 let currentWildcardValue = null;
 let isFirstDeal = true;
-let wasMyTurn = false; 
-let sortMode = 'suit'; 
+
+// Variáveis de Turno Bloqueado
+let amIPlaying = false; 
+let hasDrawnThisTurn = false;
 
 let draggingCardIndex = null;
 let ghostElement = null;
@@ -20,6 +22,42 @@ if (!mySessionId) {
     localStorage.setItem('pife_sessionId', mySessionId);
 }
 
+// = POP-UPS CUSTOMIZADOS E ELEGANTES =
+function customAlert(msg) {
+    document.getElementById('custom-modal-title').innerText = 'Aviso';
+    document.getElementById('custom-modal-message').innerText = msg;
+    document.getElementById('custom-modal-btn-no').style.display = 'none';
+    
+    const yesBtn = document.getElementById('custom-modal-btn-yes');
+    yesBtn.innerText = 'OK';
+    yesBtn.onclick = () => {
+        document.getElementById('custom-modal').classList.remove('show');
+    };
+    document.getElementById('custom-modal').classList.add('show');
+}
+
+function customConfirm(msg, onYes) {
+    document.getElementById('custom-modal-title').innerText = 'Confirmação';
+    document.getElementById('custom-modal-message').innerText = msg;
+    document.getElementById('custom-modal-btn-no').style.display = 'inline-block';
+    
+    const yesBtn = document.getElementById('custom-modal-btn-yes');
+    const noBtn = document.getElementById('custom-modal-btn-no');
+    
+    yesBtn.innerText = 'Sim';
+    noBtn.innerText = 'Não';
+    
+    yesBtn.onclick = () => {
+        document.getElementById('custom-modal').classList.remove('show');
+        if(onYes) onYes();
+    };
+    noBtn.onclick = () => {
+        document.getElementById('custom-modal').classList.remove('show');
+    };
+    document.getElementById('custom-modal').classList.add('show');
+}
+
+// Eventos de Limpeza Anti-Trava (Bateria fraca, abas...)
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') forceCleanDrag();
 });
@@ -40,7 +78,7 @@ window.onload = () => {
     let savedAvatar = localStorage.getItem('pife_avatar');
     let savedRoom = localStorage.getItem('pife_room');
     let savedTheme = localStorage.getItem('pife_theme') || 'theme-green';
-    let inRoom = localStorage.getItem('pife_in_room') === 'true'; // Verifica se ele estava na mesa
+    let inRoom = localStorage.getItem('pife_in_room') === 'true'; 
     
     if (savedName) document.getElementById('username').value = savedName;
     if (savedRoom) document.getElementById('room').value = savedRoom;
@@ -50,10 +88,7 @@ window.onload = () => {
     }
     document.body.className = savedTheme;
 
-    // AUTO RECONNECT MÁGICO AO DAR F5
-    if (inRoom && savedName) {
-        register();
-    }
+    if (inRoom && savedName) register();
 };
 
 socket.on('room_list', (list) => {
@@ -193,19 +228,23 @@ function playSFX(type) {
     }
 }
 
-// Limpa o crachá de sessão se receber erro do servidor
-socket.on('alerta', (msg) => {
-    alert(msg);
+// O Erro de Login destrói a sessão (Falso F5)
+socket.on('login_error', (msg) => {
+    customAlert(msg);
     localStorage.removeItem('pife_in_room');
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('game-screen').style.display = 'none';
     document.getElementById('chat-panel').style.display = 'none';
 });
 
+// Alertas de Jogo (NÃO CHUTAM O JOGADOR)
+socket.on('alerta', (msg) => {
+    showToast(msg, true);
+});
+
 socket.on('play_sound', playSFX);
 socket.on('game_started', () => { 
     isFirstDeal = true; 
-    wasMyTurn = false; 
 });
 
 function register() {
@@ -226,15 +265,15 @@ function register() {
 }
 
 socket.on('registered_success', () => {
-    localStorage.setItem('pife_in_room', 'true'); // Marca a sessão ativa
+    localStorage.setItem('pife_in_room', 'true'); 
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('game-screen').style.display = 'flex';
     document.getElementById('chat-panel').style.display = 'flex';
 });
 
 socket.on('kicked_by_admin', () => {
-    alert('Você foi expulso pelo Administrador da sala.');
-    localStorage.removeItem('pife_in_room'); // Tira o jogador da mesa
+    customAlert('Você foi expulso pelo Administrador da sala.');
+    localStorage.removeItem('pife_in_room'); 
     document.getElementById('game-screen').style.display = 'none';
     document.getElementById('chat-panel').style.display = 'none';
     document.getElementById('login-screen').style.display = 'flex';
@@ -243,31 +282,38 @@ socket.on('kicked_by_admin', () => {
 });
 
 function kickPlayerReq(targetSessionId) {
-    if(confirm('Tem certeza que deseja expulsar este jogador da sala?')) {
+    customConfirm('Tem certeza que deseja expulsar este jogador da sala?', () => {
         socket.emit('kick_player', targetSessionId);
-    }
+    });
 }
 
 function startGame() { socket.emit('startGame'); }
-function resetGame() { if(confirm('Resetar a mesa cancelará a partida de todos. Continuar?')) socket.emit('resetGame'); }
+
+function resetGame() { 
+    customConfirm('Resetar a mesa cancelará a partida de todos. Continuar?', () => {
+        socket.emit('resetGame');
+    });
+}
+
 function drawDeck() { socket.emit('draw_deck'); }
 function drawDiscard() { socket.emit('draw_discard'); }
 function bater() { socket.emit('bater'); }
 
 function leaveTable() {
-    if(confirm('Deseja mesmo levantar da mesa? Você voltará para o Saguão.')) {
-        localStorage.removeItem('pife_in_room'); // Desloga corretamente
+    customConfirm('Deseja mesmo levantar da mesa? Você voltará para o Saguão.', () => {
+        localStorage.removeItem('pife_in_room'); 
         socket.emit('leaveTable');
         document.getElementById('game-screen').style.display = 'none';
         document.getElementById('chat-panel').style.display = 'none';
         document.getElementById('login-screen').style.display = 'flex';
         localHand = [];
-    }
+    });
 }
 
 const cardValToNum = { 'A':1, '2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13 };
 const suitOrder = { '♥': 1, '♦': 2, '♣': 3, '♠': 4 };
 
+// VALIDAÇÃO ESTRITA PRO AUTO-SORT (Igual no servidor)
 function isValidSetForSort(group, wildcardValue) {
     let normals = group.filter(c => c.value !== wildcardValue);
     let wildcards = group.length - normals.length;
@@ -275,7 +321,7 @@ function isValidSetForSort(group, wildcardValue) {
     if (wildcards >= 2) return true;
     if (wildcards === 1) {
         let [n1, n2] = normals;
-        if (n1.value === n2.value) return true;
+        if (n1.value === n2.value) return n1.suit !== n2.suit; // Naipes Diferentes
         if (n1.suit === n2.suit) {
             let v1 = cardValToNum[n1.value];
             let v2 = cardValToNum[n2.value];
@@ -289,7 +335,11 @@ function isValidSetForSort(group, wildcardValue) {
     }
     if (wildcards === 0) {
         let [n1, n2, n3] = normals;
-        if (n1.value === n2.value && n2.value === n3.value) return true;
+        if (n1.value === n2.value && n2.value === n3.value) {
+            // Naipes Diferentes
+            if (n1.suit !== n2.suit && n1.suit !== n3.suit && n2.suit !== n3.suit) return true;
+            return false;
+        }
         if (n1.suit === n2.suit && n2.suit === n3.suit) {
             let nums = [cardValToNum[n1.value], cardValToNum[n2.value], cardValToNum[n3.value]].sort((a,b) => a - b);
             if (nums[0] + 1 === nums[1] && nums[1] + 1 === nums[2]) return true;
@@ -370,6 +420,10 @@ function renderCardHTML(card, isWildcard = false, addAnim = false) {
 
 function initCardDrag(e, index) {
     if (e.button !== 0 && e.type !== 'touchstart') return; 
+    
+    // Trava do Mobile: Impede selecionar texto do celular ao segurar
+    if (e.type === 'mousedown') e.preventDefault();
+    
     if (draggingCardIndex !== null) return; 
 
     forceCleanDrag();
@@ -502,11 +556,24 @@ function onDragEnd(e) {
         const cardObj = localHand[draggingCardIndex];
 
         if (isMoved && isOverDiscardArea(clientX, clientY)) {
-            socket.emit('discard', cardObj.id);
+            // VERIFICA SE PODE DESCARTAR
+            if (!amIPlaying) {
+                showToast('Não é sua vez de jogar!', true);
+            } else if (!hasDrawnThisTurn) {
+                showToast('Compre uma carta primeiro!', true);
+            } else {
+                socket.emit('discard', cardObj.id);
+            }
         } 
         else if (!isMoved) {
-            if (confirm(`Deseja descartar a carta ${cardObj.value}${cardObj.suit}?`)) {
-                socket.emit('discard', cardObj.id);
+            // CLIQUE SIMPLES
+            if (amIPlaying && hasDrawnThisTurn) {
+                customConfirm(`Deseja descartar a carta ${cardObj.value}${cardObj.suit}?`, () => {
+                    socket.emit('discard', cardObj.id);
+                });
+            } else {
+                // Se clicar fora do turno, apenas agrupa visualmente (Ajuda o usuário)
+                toggleGroup(cardObj.id);
             }
         } 
         else if (targetInsertIndex !== null) {
@@ -533,10 +600,13 @@ function renderHand() {
             let isWildcard = (card.value === currentWildcardValue);
             let html = renderCardHTML(card, isWildcard, isFirstDeal);
             
+            // CORREÇÃO DO Z-INDEX PARA OS NAIPES NÃO VAZAREM NO SOBREPOSTO
+            html = html.replace('class="card', `style="z-index: ${index};" class="card`);
+
             if(currentLayout === 'layout-fan') {
                 let offset = index - (localHand.length / 2);
                 let rot = offset * 8; 
-                html = html.replace('class="card', `style="transform: rotate(${rot}deg);" class="card`);
+                html = html.replace('class="card', `style="z-index: ${index}; transform: rotate(${rot}deg);" class="card`);
             }
             return html;
         }).join('');
@@ -570,6 +640,8 @@ socket.on('gameState', (state) => {
     document.getElementById('btn-start').style.display = state.status === 'waiting' ? 'block' : 'none';
     
     currentWildcardValue = state.wildcardValue;
+    amIPlaying = (state.turn === socket.id && state.status === 'playing');
+    hasDrawnThisTurn = state.hasDrawnThisTurn;
     
     const deckCountEl = document.getElementById('deck-count');
     if (deckCountEl) deckCountEl.innerText = state.deckCount || 0;
@@ -589,20 +661,25 @@ socket.on('gameState', (state) => {
         statusMsg.style.color = "#ff4a4a";
         statusMsg.classList.remove('my-turn-glow');
     } else {
-        let isMyTurn = (state.turn === socket.id && state.status === 'playing');
-        if (isMyTurn) {
-            statusMsg.innerText = state.hasDrawnThisTurn ? 'SUA VEZ: Descarte' : 'SUA VEZ: Compre';
+        if (amIPlaying) {
+            statusMsg.innerText = hasDrawnThisTurn ? 'SUA VEZ: Descarte' : 'SUA VEZ: Compre';
             statusMsg.classList.add('my-turn-glow');
             if (!wasMyTurn) showToast('✨ É a sua vez de jogar!', true);
         } else {
             statusMsg.innerText = state.status === 'waiting' ? 'Aguardando Inicio...' : 'Aguarde o oponente';
             statusMsg.classList.remove('my-turn-glow');
         }
-        wasMyTurn = isMyTurn;
+        wasMyTurn = amIPlaying;
     }
 
+    // A CARTA DA MORTA E A MEDALHA DO CURINGA
     document.getElementById('wildcard-container').innerHTML = renderCardHTML(state.wildcardCard, false, false);
-    document.getElementById('wildcard-text').innerText = state.wildcardValue || '-';
+    if (state.wildcardValue) {
+        document.getElementById('wildcard-text').innerText = state.wildcardValue;
+        document.getElementById('wildcard-badge').style.display = 'block';
+    } else {
+        document.getElementById('wildcard-badge').style.display = 'none';
+    }
 
     const topDiscard = state.discardPile.length > 0 ? state.discardPile[state.discardPile.length - 1] : null;
     document.getElementById('discard-container').innerHTML = renderCardHTML(topDiscard, false, false);

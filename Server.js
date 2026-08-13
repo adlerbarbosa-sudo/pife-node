@@ -44,13 +44,6 @@ function initRoom(roomId, password = '') {
     return rooms[roomId];
 }
 
-function deleteRoomIfEmpty(roomId) {
-    if (rooms[roomId] && rooms[roomId].players.length === 0) {
-        delete rooms[roomId];
-        broadcastRoomList();
-    }
-}
-
 function createDeck() {
     const suits = ['♥', '♦', '♣', '♠'];
     let deck = [];
@@ -69,30 +62,37 @@ function getNextValue(val) {
     return cardValues[(idx + 1) % cardValues.length];
 }
 
+// VALIDAÇÃO ESTRITA: Trincas PRECISAM ter naipes diferentes.
 function isValidSet(group, wildcardValue) {
     let normals = group.filter(c => c.value !== wildcardValue);
     let wildcards = group.length - normals.length;
 
-    if (wildcards >= 2) return true; 
+    if (wildcards >= 2) return true;
 
     if (wildcards === 1) {
         let [n1, n2] = normals;
-        if (n1.value === n2.value) return true;
+        if (n1.value === n2.value) {
+            return n1.suit !== n2.suit; // Trinca: naipes diferentes
+        }
         if (n1.suit === n2.suit) {
             let v1 = cardValueToNum[n1.value];
             let v2 = cardValueToNum[n2.value];
             if (v1 > v2) { let temp = v1; v1 = v2; v2 = temp; }
             let diff = v2 - v1;
-            if (diff === 1 || diff === 2) return true; 
-            if (v1 === 1 && v2 === 12) return true; 
-            if (v1 === 1 && v2 === 13) return true; 
+            if (diff === 1 || diff === 2) return true;
+            if (v1 === 1 && v2 === 12) return true;
+            if (v1 === 1 && v2 === 13) return true;
         }
         return false;
     }
 
     if (wildcards === 0) {
         let [n1, n2, n3] = normals;
-        if (n1.value === n2.value && n2.value === n3.value) return true;
+        if (n1.value === n2.value && n2.value === n3.value) {
+            // Trinca: Os 3 naipes precisam ser diferentes
+            if (n1.suit !== n2.suit && n1.suit !== n3.suit && n2.suit !== n3.suit) return true;
+            return false;
+        }
         if (n1.suit === n2.suit && n2.suit === n3.suit) {
             let nums = [cardValueToNum[n1.value], cardValueToNum[n2.value], cardValueToNum[n3.value]].sort((a,b) => a - b);
             if (nums[0] + 1 === nums[1] && nums[1] + 1 === nums[2]) return true;
@@ -100,6 +100,7 @@ function isValidSet(group, wildcardValue) {
         }
         return false;
     }
+    return false;
 }
 
 function findSets(cards, wildcardValue) {
@@ -242,13 +243,13 @@ io.on('connection', (socket) => {
             
             if (!existingPlayer) {
                 if (room.password && room.password !== data.password) {
-                    return socket.emit('alerta', 'Senha incorreta para esta sala!');
+                    return socket.emit('login_error', 'Senha incorreta para esta sala!');
                 }
                 if (room.players.length >= 4) {
-                    return socket.emit('alerta', 'A mesa escolhida já está cheia (Máx 4).');
+                    return socket.emit('login_error', 'A mesa escolhida já está cheia (Máx 4).');
                 }
                 if (room.status === 'playing') {
-                    return socket.emit('alerta', 'Jogo em andamento nesta sala, aguarde a rodada acabar.');
+                    return socket.emit('login_error', 'Jogo em andamento nesta sala, aguarde a rodada acabar.');
                 }
             }
         } else {

@@ -10,6 +10,18 @@
     <meta name="theme-color" content="#1a472a">
 </head>
 <body class="theme-green">
+    <!-- Pop-up Elegante In-Game (Substitui o Confirm/Alert do Navegador) -->
+    <div id="custom-modal" class="custom-modal">
+        <div class="custom-modal-content">
+            <h3 id="custom-modal-title">Aviso</h3>
+            <p id="custom-modal-message"></p>
+            <div class="custom-modal-buttons">
+                <button id="custom-modal-btn-no" class="danger-outline" style="display:none;">Não</button>
+                <button id="custom-modal-btn-yes">OK</button>
+            </div>
+        </div>
+    </div>
+
     <div id="turn-toast" class="turn-toast"></div>
 
     <div id="login-screen" class="screen">
@@ -35,7 +47,6 @@
             
             <button onclick="register()" style="width: 100%; font-size: 1.2rem; padding: 12px;">Criar / Entrar</button>
 
-            <!-- Saguão de Salas Fixo -->
             <div id="lobby-rooms" style="margin-top: 20px; text-align: left; background: rgba(0,0,0,0.5); padding: 15px; border-radius: 10px;">
                 <h4 style="margin-bottom: 10px; color: var(--accent-color); text-transform: uppercase; font-size: 0.9rem;">Salas Abertas Agora:</h4>
                 <ul id="room-list" class="room-list">
@@ -95,10 +106,14 @@
             </div>
             
             <div class="deck-area highlight-area">
-                <div id="wildcard-container">
-                    <div class="card empty">Morta</div>
+                <div class="status-label" style="margin-bottom: 5px;">Curinga da Rodada</div>
+                <!-- NOVO: Display Elegante para o Curinga -->
+                <div class="wildcard-wrapper">
+                    <div id="wildcard-container" style="opacity: 0.5; transform: scale(0.9);">
+                        <div class="card empty">Morta</div>
+                    </div>
+                    <div id="wildcard-badge" class="wildcard-badge" style="display: none;">⭐ <span id="wildcard-text">-</span></div>
                 </div>
-                <div class="status-label">Curinga é: <span id="wildcard-text">-</span></div>
             </div>
 
             <div class="deck-area" ondragover="dragOver(event)" ondrop="dropToDiscard(event)">
