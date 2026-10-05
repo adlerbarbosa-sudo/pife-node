@@ -47,7 +47,7 @@ Variáveis de ambiente:
 ## Organização
 
 ```
-server.js          Express + Socket.IO (cabeçalhos de segurança, arquivos estáticos)
+Server.js          Express + Socket.IO (cabeçalhos de segurança, arquivos estáticos)
 src/hub.js         Salas, turnos, identidades, vitórias (independente de rede, testável)
 src/store.js       Contas: scrypt + tokens de sessão em users.json
 public/rules.js    Regras do jogo — usado pelo servidor E pelo navegador (uma única fonte da verdade)

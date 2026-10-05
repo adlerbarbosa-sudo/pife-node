@@ -2,9 +2,9 @@
   "name": "pife-game",
   "version": "2.0.0",
   "description": "Clube do Pife: pife online multijogador com salas, chat, contas e placar (Node + Socket.IO)",
-  "main": "server.js",
+  "main": "Server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node Server.js",
     "test": "node --test test/*.test.js"
   },
   "engines": {
