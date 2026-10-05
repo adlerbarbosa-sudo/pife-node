@@ -48,7 +48,7 @@
     let game = null;               // último gameState
     let localHand = [];            // mão na ordem escolhida pelo jogador
     let selectedId = null;
-    let layout = ls.get('pife_layout') || 'open';
+    let layout = ['overlap', 'fan', 'flat'].includes(ls.get('pife_layout')) ? ls.get('pife_layout') : 'overlap';
     let muted = ls.get('pife_mute') === '1';
     let chosenAvatar = ls.get('pife_avatar') && AVATARS.includes(ls.get('pife_avatar')) ? ls.get('pife_avatar') : AVATARS[0];
     let upgradeMode = false;
@@ -195,13 +195,13 @@
     /* ---------- cartas (DOM) ---------- */
     function cardNode(card, { wild = false, extra = '' } = {}) {
         const red = card.suit === '♥' || card.suit === '♦';
-        const corner = (pos) => el('div', { class: `corner ${pos}` }, el('b', { text: card.value }), el('i', { text: card.suit }));
+        const mini = (cls) => el('div', { class: cls }, card.value, el('br'), card.suit);
         return el('div', {
-            class: `card ${red ? 'red' : 'black'}${wild ? ' is-wild' : ''} ${extra}`.trim(),
+            class: `card ${red ? 'red' : 'black'}${wild ? ' is-wildcard' : ''} ${extra}`.trim(),
             role: 'img', 'aria-label': R.cardLabel(card) + (wild ? ' (curinga)' : ''), dataset: { id: card.id },
-        }, corner('tl'), el('div', { class: 'pip', text: card.suit }), corner('br'), wild ? el('span', { class: 'wild-star', text: '★' }) : null);
+        }, mini('card-mini'), el('div', { class: 'card-center', text: card.suit }), mini('card-mini-bottom'));
     }
-    const backCard = (count) => el('div', { class: 'card back' }, count != null ? el('span', { class: 'count', text: String(count) }) : null);
+    const backCard = (count) => el('div', { class: 'card back' }, 'Monte', count != null ? el('div', { class: 'deck-count-badge', text: String(count) }) : null);
     const emptyCard = (text) => el('div', { class: 'card empty', text });
 
     /* ====================================================================== */
@@ -368,7 +368,7 @@
 
     function toLobby(msg) {
         game = null; localHand = []; selectedId = null; wasMyTurn = false; lastRoomId = null; pendingState = null;
-        closeModal(); setChat(false);
+        closeModal(); setChat(false); hideGameOver();
         renderLobby();
         show('lobby');
         if (msg) alertDialog(msg);
@@ -396,8 +396,7 @@
     const myTurn = () => !!game && game.status === 'playing' && game.turnPid === game.me.pid;
     const canDraw = () => myTurn() && !game.paused && game.phase === 'draw';
     const canDiscard = () => myTurn() && !game.paused && game.phase === 'discard';
-    const effectiveLayout = () => (layout === 'fan' && window.innerWidth < 700 ? 'open' : layout);
-
+    
     function whyNotDraw() {
         if (!game || game.status !== 'playing') return 'A partida ainda não começou.';
         if (game.paused) return 'Jogo pausado: um jogador caiu.';
@@ -423,9 +422,8 @@
         if (mine && !wasMyTurn && !state.paused) { toast('✨ É a sua vez!', 1800); sfx('turn'); }
         wasMyTurn = mine;
 
-        $('room-name').textContent = state.roomId;
-        $('chat-room').textContent = state.roomId;
-        renderTop(); renderHint(); renderOpponents(); renderTable(); renderHand(fresh); renderMeld(); renderActions();
+        $('display-room-name').textContent = state.roomId;
+        renderTop(); renderStatus(); renderHint(); renderOpponents(); renderTable(); renderHand(fresh); renderMeld(); renderActions();
     }
 
     function handleState(state) {
@@ -435,9 +433,20 @@
 
     function renderTop() {
         const m = game.me;
-        $('me-chip').replaceChildren(
-            el('span', { text: game.isAdmin ? '👑' : '' }), el('span', { text: m.avatar }),
-            el('span', { class: 'nm', text: m.name }), el('span', { class: 'trophy', text: `🏆 ${m.wins}` }));
+        $('player-name').replaceChildren(`${game.isAdmin ? '👑 ' : ''}${m.avatar} ${m.name} `, el('span', { class: 'trophy', text: `🏆 ${m.wins}` }));
+        $('btn-start').style.display = game.status === 'waiting' && game.isAdmin ? 'block' : 'none';
+        $('btn-start').disabled = game.players.length < 2;
+        $('btn-reset').style.display = game.isAdmin ? 'block' : 'none';
+    }
+
+    function renderStatus() {
+        const st = $('status-message');
+        st.classList.remove('my-turn-glow');
+        st.style.color = '';
+        if (game.status === 'waiting') st.textContent = 'Aguardando Início...';
+        else if (game.paused) { st.textContent = 'JOGO PAUSADO'; st.style.color = '#ff4a4a'; }
+        else if (myTurn()) { st.textContent = game.phase === 'draw' ? 'SUA VEZ: Compre' : 'SUA VEZ: Descarte'; st.classList.add('my-turn-glow'); }
+        else st.textContent = 'Aguarde o oponente';
     }
 
     function countdownNode(at) {
@@ -452,11 +461,9 @@
         if (s.status === 'waiting') {
             const n = s.players.length;
             if (s.isAdmin) {
-                hint.append(
-                    el('span', {}, n < 2
-                        ? ['Você é o administrador 👑. Chame alguém: diga o nome da sala ', el('b', { text: s.roomId }), ' (2 a 4 jogadores).']
-                        : 'Todos prontos? Toque em Iniciar quando quiser.'),
-                    el('button', { class: 'btn primary', type: 'button', disabled: n < 2, on: { click: () => socket.emit('startGame') } }, '▶ Iniciar partida'));
+                hint.append(el('span', {}, n < 2
+                    ? ['Você é o administrador 👑. Chame alguém: diga o nome da sala ', el('b', { text: s.roomId }), ' (2 a 4 jogadores).']
+                    : ['Todos prontos? Toque em ', el('b', { text: 'Iniciar' }), ' quando quiser.']));
             } else {
                 hint.append(el('span', {}, 'Aguardando o administrador 👑 iniciar a partida…'));
             }
@@ -492,17 +499,16 @@
     }
 
     function renderOpponents() {
-        const box = $('opponents');
+        const box = $('opponents-area');
         box.replaceChildren(...game.players.filter((p) => !p.isMe).map((p) => {
             const turn = game.status === 'playing' && game.turnPid === p.pid && p.connected;
-            const n = el('div', { class: `opp${turn ? ' turn' : ''}${p.connected ? '' : ' offline'}`, dataset: { pid: p.pid } },
-                turn ? el('div', { class: 'tag', text: 'Vez dele(a)' }) : null,
-                !p.connected ? el('div', { class: 'tag off' }, 'Caiu · ', countdownNode(p.reconnectAt), 's') : null,
-                game.isAdmin ? el('button', { class: 'kick', type: 'button', 'aria-label': `Expulsar ${p.name}`, text: '✕', on: { click: () => kickPlayer(p) } }) : null,
-                el('div', { class: 'nm', text: `${p.isAdmin ? '👑 ' : ''}${p.avatar} ${p.name}` }),
-                el('div', { class: 'meta' }, el('span', { class: 'trophy', text: `🏆 ${p.wins}` }),
-                    game.status === 'playing' ? el('span', { class: 'cards-mini', text: `🂠 ${p.cards}` }) : null));
-            return n;
+            return el('div', { class: `opponent${turn ? ' is-turn' : ''}${p.connected ? '' : ' offline'}`, dataset: { pid: p.pid } },
+                game.isAdmin ? el('button', { class: 'kick-btn', type: 'button', title: 'Expulsar Jogador', 'aria-label': `Expulsar ${p.name}`, text: '❌', on: { click: () => kickPlayer(p) } }) : null,
+                turn ? el('div', { class: 'turn-badge', text: 'Vez Dele' }) : null,
+                !p.connected ? el('div', { class: 'offline-tag' }, 'Caiu · ', countdownNode(p.reconnectAt), 's') : null,
+                el('h3', { text: `${p.isAdmin ? '👑 ' : ''}${p.avatar} ${p.name}` }),
+                el('div', {}, el('span', { class: 'trophy', text: `🏆 ${p.wins}` })),
+                game.status === 'playing' ? el('p', { text: `${p.cards} cartas` }) : null);
         }));
         updateCountdowns();
     }
@@ -516,16 +522,14 @@
         const s = game;
         const draw = canDraw();
         const playing = s.status === 'playing';
-        $('pile-deck').querySelector('.pile-card').replaceChildren(s.status === 'playing' ? backCard(s.deckCount) : emptyCard('Monte'));
-        $('pile-wild').querySelector('.pile-card').replaceChildren(s.wildcardCard ? cardNode(s.wildcardCard) : emptyCard('Curinga'));
-        $('wild-label').replaceChildren(...(s.wildcardValue
-            ? ['Vira · curinga é o ', el('b', { text: s.wildcardValue, style: 'color:#ffeb3b;font-size:1.15em' })]
-            : ['Curinga']));
-        $('pile-discard').querySelector('.pile-card').replaceChildren(s.discardTop ? cardNode(s.discardTop, { wild: !!s.wildcardValue && s.discardTop.value === s.wildcardValue }) : emptyCard(playing ? 'vazio' : 'Lixo'));
+        $('deck-container').replaceChildren(playing ? backCard(s.deckCount) : emptyCard('Monte'));
+        $('wildcard-container').replaceChildren(s.wildcardCard ? cardNode(s.wildcardCard) : emptyCard('Morta'));
+        $('wildcard-badge').hidden = !s.wildcardValue;
+        $('wildcard-text').textContent = s.wildcardValue || '-';
+        $('discard-container').replaceChildren(s.discardTop ? cardNode(s.discardTop, { wild: !!s.wildcardValue && s.discardTop.value === s.wildcardValue }) : emptyCard(playing ? 'Vazio' : 'Lixo'));
         ['pile-deck', 'pile-discard'].forEach((id) => {
             $(id).classList.toggle('can-draw', draw);
             $(id).classList.toggle('locked', playing && !draw);
-            $(id).setAttribute('aria-disabled', draw ? 'false' : 'true');
         });
     }
 
@@ -536,9 +540,9 @@
     }
 
     function renderHand(fresh = new Set()) {
-        const hand = $('hand');
-        const lay = effectiveLayout();
-        hand.className = `hand mode-${lay}`;
+        const hand = $('my-hand');
+        const lay = layout;
+        hand.className = `hand-area layout-${lay}`;
         const melds = computeMelds();
         const groupOf = new Map();
         melds.groups.forEach((g, gi) => g.forEach((c) => groupOf.set(c.id, gi)));
@@ -549,11 +553,12 @@
         hand.replaceChildren(...localHand.map((card, i) => {
             const node = cardNode(card, { wild: !!wv && card.value === wv });
             node.tabIndex = 0;
+            node.style.zIndex = String(i);
             if (groupOf.has(card.id)) node.dataset.g = String(groupOf.get(card.id));
             if (winnable && !groupOf.has(card.id)) node.classList.add('loose');
             if (card.id === selectedId) node.classList.add('selected');
             if (fresh.has(card.id)) node.classList.add('fresh');
-            if (lay === 'fan') node.style.setProperty('--rot', `${((i - (n - 1) / 2) * 4).toFixed(1)}deg`);
+            if (lay === 'fan') node.style.setProperty('--rot', `${((i - (n - 1) / 2) * 5).toFixed(1)}deg`);
             return node;
         }));
     }
@@ -572,21 +577,21 @@
     }
 
     function renderActions() {
-        const sortBtn = $('btn-sort'); const disc = $('btn-discard'); const bat = $('btn-bater');
-        sortBtn.classList.toggle('disabled', localHand.length < 2);
+        document.querySelectorAll('.layout-btn').forEach((b) => b.setAttribute('aria-pressed', b.dataset.layout === layout ? 'true' : 'false'));
+        $('btn-sort').classList.toggle('disabled', localHand.length < 2);
+        const disc = $('btn-discard'); const bat = $('btn-bater');
         const sel = localHand.find((c) => c.id === selectedId);
         disc.textContent = sel ? `Descartar ${sel.value}${sel.suit}` : 'Descartar';
         const canD = canDiscard() && !!sel;
         disc.classList.toggle('ready', canD);
         disc.classList.toggle('disabled', !canD);
-        const canB = canDiscard() && localHand.length === 10 && computeMelds().count === 3;
-        bat.classList.toggle('ready', canB);
+        bat.classList.toggle('ready', canDiscard() && localHand.length === 10 && computeMelds().count === 3);
         bat.classList.toggle('disabled', !canDiscard());
     }
 
     function toggleSelect(id) {
         selectedId = selectedId === id ? null : id;
-        document.querySelectorAll('#hand .card').forEach((c) => c.classList.toggle('selected', c.dataset.id === selectedId));
+        document.querySelectorAll('#my-hand .card').forEach((c) => c.classList.toggle('selected', c.dataset.id === selectedId));
         renderActions();
     }
 
@@ -628,7 +633,8 @@
     function startGhost(e) {
         const rect = drag.el.getBoundingClientRect();
         const ghost = drag.el.cloneNode(true);
-        ghost.classList.remove('selected', 'fresh', 'loose');
+        ghost.classList.remove('selected', 'fresh', 'loose', 'dragging-origin');
+        ghost.removeAttribute('data-g');
         ghost.classList.add('ghost-card');
         ghost.style.setProperty('--cw', `${rect.width}px`);
         document.body.append(ghost);
@@ -636,7 +642,7 @@
         drag.w = rect.width; drag.h = rect.height;
         drag.el.classList.add('dragging-origin');
         drag.marker = el('div', { class: 'drop-marker' });
-        $('hand').append(drag.marker);
+        $('my-hand').append(drag.marker);
     }
 
     function onDragMove(e) {
@@ -651,7 +657,7 @@
 
         drag.discard = overDiscard(e.clientX, e.clientY);
         $('pile-discard').classList.toggle('drop-target', drag.discard);
-        const handEl = $('hand');
+        const handEl = $('my-hand');
         const hr = handEl.getBoundingClientRect();
         const inHand = !drag.discard && e.clientY > hr.top - 70 && e.clientY < hr.bottom + 70;
         drag.insertIndex = null;
@@ -710,7 +716,7 @@
     /* ----- chat ----- */
     function setChat(open) {
         chatOpen = open;
-        $('chat').classList.toggle('open', open);
+        $('chat-panel').classList.toggle('mobile-open', open);
         if (open) { $('chat-dot').hidden = true; const m = $('chat-messages'); m.scrollTop = m.scrollHeight; }
     }
 
@@ -720,7 +726,7 @@
         box.append(node);
         while (box.children.length > 150) box.firstChild.remove();
         if (stick) box.scrollTop = box.scrollHeight;
-        if (countsAsUnread && !chatOpen && window.innerWidth < 1000) $('chat-dot').hidden = false;
+        if (countsAsUnread && !chatOpen && window.innerWidth <= 850) $('chat-dot').hidden = false;
     }
 
     /* ----- menu, ajuda, fim de rodada ----- */
@@ -730,32 +736,7 @@
         document.querySelector('meta[name="theme-color"]').setAttribute('content', THEMES[name]);
     }
 
-    function openMenu() {
-        const themeRow = el('div', { class: 'menu-row' }, el('label', { text: 'Cor da mesa' }),
-            Object.keys(THEMES).map((t) => el('button', {
-                class: 'theme-dot', type: 'button', style: `background:${THEMES[t]}`, 'aria-label': `Mesa ${t}`,
-                'aria-pressed': document.body.className === `theme-${t}` ? 'true' : 'false',
-                on: { click: () => { setTheme(t); openMenu(); } },
-            })));
-        const layoutRow = el('div', { class: 'menu-row' }, el('label', { text: 'Como mostrar a mão' }),
-            [['open', 'Aberto'], ['overlap', 'Sobreposto'], ['fan', 'Leque']].map(([k, label]) => el('button', {
-                class: `chip${k === 'fan' ? ' layout-fan-chip' : ''}`, type: 'button', 'aria-pressed': layout === k ? 'true' : 'false',
-                on: { click: () => { layout = k; ls.set('pife_layout', k); renderHand(); openMenu(); } },
-            }, label)));
-        const soundRow = el('div', { class: 'menu-row' }, el('label', { text: 'Som' }),
-            el('button', { class: 'chip', type: 'button', 'aria-pressed': muted ? 'false' : 'true', on: { click: () => { muted = !muted; ls.set('pife_mute', muted ? '1' : '0'); openMenu(); } } }, muted ? '🔇 Desligado' : '🔊 Ligado'));
-        const actions = el('div', { class: 'menu-row' }, el('label', { text: 'Mesa' }),
-            game && game.isAdmin ? el('button', { class: 'btn ghost small', type: 'button', on: { click: async () => {
-                closeModal();
-                if (await confirmDialog('Resetar a mesa cancela a partida de todos. Continuar?', { yes: 'Resetar', danger: true })) socket.emit('resetGame');
-            } } }, '♻️ Resetar mesa') : null,
-            el('button', { class: 'btn danger small', type: 'button', on: { click: async () => {
-                closeModal();
-                if (await confirmDialog('Levantar da mesa e voltar ao saguão?', { yes: 'Sair da mesa', danger: true })) socket.emit('leave_table');
-            } } }, '🚪 Sair da mesa'));
-        openModal([el('h3', { text: 'Menu' }), el('div', { class: 'menu-grid' }, themeRow, layoutRow, soundRow, actions),
-            el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', on: { click: () => closeModal() } }, 'Fechar'))]);
-    }
+    function updateSoundBtn() { $('btn-sound').textContent = muted ? '🔇' : '🔊'; }
 
     function openHelp() {
         const p = (t) => el('p', { text: t });
@@ -784,16 +765,15 @@
         const mine = game && d.winnerPid === game.me.pid;
         sfx('win');
         confetti();
-        const sets = d.sets.map((s) => el('div', { class: 'over-set' }, s.map((c) => cardNode(c, { wild: c.value === d.wildcardValue, extra: 'mini' }))));
-        openModal([
-            el('h3', { text: mine ? '🎉 Você bateu!' : `🏆 ${d.winnerAvatar} ${d.winnerName} bateu!` }),
-            el('p', { text: 'Jogos validados pelo servidor:' }),
-            el('div', { class: 'over-sets' }, sets,
-                d.discard ? el('div', { class: 'over-set', title: 'Descarte' }, cardNode(d.discard, { extra: 'mini' })) : null),
-            el('table', { class: 'scoreboard' }, d.scoreboard.map((r) => el('tr', {}, el('td', { text: `${r.avatar} ${r.name}` }), el('td', { text: `🏆 ${r.wins}` })))),
-            el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', on: { click: () => closeModal() } }, 'Continuar')),
-        ]);
+        closeModal();
+        $('winner-msg').textContent = mine ? '🎉 VOCÊ BATEU! 🎉' : `🎉 ${d.winnerAvatar} ${d.winnerName} BATEU! 🎉`;
+        const sets = d.sets.map((st) => el('div', { class: 'set-group' }, st.map((c) => cardNode(c, { wild: c.value === d.wildcardValue }))));
+        if (d.discard) sets.push(el('div', { class: 'set-group', style: 'margin-left:30px;opacity:.7' }, el('div', {}, el('small', { text: 'Descarte:' }), el('br'), cardNode(d.discard))));
+        $('winner-hand').replaceChildren(...sets);
+        $('over-scoreboard').replaceChildren(...d.scoreboard.map((r) => el('tr', {}, el('td', { text: `${r.avatar} ${r.name}` }), el('td', { text: `🏆 ${r.wins}` }))));
+        $('game-over-screen').classList.add('active');
     }
+    const hideGameOver = () => $('game-over-screen').classList.remove('active');
 
     /* ====================================================================== */
     /*  EVENTOS DO SOCKET                                                      */
@@ -812,7 +792,7 @@
     socket.on('kicked_by_admin', () => toLobby('Você foi expulso(a) da sala pelo administrador.'));
     socket.on('session_replaced', () => toLobby('Sua conta entrou em outro aparelho, então esta tela saiu da mesa.'));
     socket.on('gameState', handleState);
-    socket.on('game_started', () => toast('🎲 A partida começou! Veja o curinga no centro da mesa.', 3000));
+    socket.on('game_started', () => { hideGameOver(); toast('🎲 A partida começou! Veja o curinga no centro da mesa.', 3000); });
     socket.on('alerta', (msg) => toast(String(msg)));
     socket.on('play_sound', sfx);
     socket.on('gameOver', showGameOver);
@@ -825,7 +805,7 @@
 
     socket.on('receive_emote', ({ pid, emote }) => {
         sfx('pop');
-        const origin = (game && game.me.pid === pid) ? $('me-chip') : document.querySelector(`[data-pid="${CSS.escape(String(pid))}"]`);
+        const origin = (game && game.me.pid === pid) ? $('player-name') : document.querySelector(`[data-pid="${CSS.escape(String(pid))}"]`);
         const node = el('div', { class: 'floating-emote', text: String(emote) });
         const r = origin ? origin.getBoundingClientRect() : null;
         node.style.left = r ? `${r.left + r.width / 2}px` : '50%';
@@ -861,10 +841,23 @@
         });
         document.querySelectorAll('[data-help]').forEach((b) => b.addEventListener('click', openHelp));
         $('btn-help').addEventListener('click', openHelp);
-        $('btn-menu').addEventListener('click', openMenu);
-        $('btn-chat').addEventListener('click', () => setChat(!chatOpen));
-        $('btn-chat-close').addEventListener('click', () => setChat(false));
-        $('chat-form').addEventListener('submit', (e) => {
+        $('btn-toggle-chat').addEventListener('click', () => setChat(!chatOpen));
+        $('btn-theme').addEventListener('click', (e) => { e.stopPropagation(); $('theme-menu').classList.toggle('show'); });
+        document.querySelectorAll('.theme-opt').forEach((b) => b.addEventListener('click', () => { setTheme(b.dataset.theme); $('theme-menu').classList.remove('show'); }));
+        document.addEventListener('click', (e) => { if (!e.target.closest('.emote-wrapper')) $('theme-menu').classList.remove('show'); });
+        $('btn-sound').addEventListener('click', () => { muted = !muted; ls.set('pife_mute', muted ? '1' : '0'); updateSoundBtn(); });
+        $('btn-start').addEventListener('click', () => socket.emit('startGame'));
+        $('btn-reset').addEventListener('click', async () => {
+            if (await confirmDialog('Resetar a mesa cancela a partida de todos. Continuar?', { yes: 'Resetar', danger: true })) socket.emit('resetGame');
+        });
+        $('btn-leave').addEventListener('click', async () => {
+            if (await confirmDialog('Levantar da mesa e voltar ao saguão?', { yes: 'Sair da mesa', danger: true })) socket.emit('leave_table');
+        });
+        document.querySelectorAll('.layout-btn').forEach((b) => b.addEventListener('click', () => { layout = b.dataset.layout; ls.set('pife_layout', layout); if (game) renderHand(); renderActions(); }));
+        $('btn-new-round').addEventListener('click', hideGameOver);
+        updateSoundBtn();
+        $('btn-close-chat').addEventListener('click', () => setChat(false));
+        $('chat-input-area').addEventListener('submit', (e) => {
             e.preventDefault();
             const input = $('chat-input');
             if (input.value.trim()) socket.emit('send_chat', input.value);
@@ -894,7 +887,7 @@
             socket.emit('bater');
         });
 
-        const hand = $('hand');
+        const hand = $('my-hand');
         hand.addEventListener('pointerdown', onHandPointerDown);
         hand.addEventListener('contextmenu', (e) => e.preventDefault());
         hand.addEventListener('keydown', (e) => {

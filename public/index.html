@@ -13,137 +13,180 @@
 </head>
 <body class="theme-green">
 
-<div id="splash" class="screen active"><div class="splash-box"><div class="splash-logo">♠ ♥</div><p>Conectando…</p></div></div>
+    <!-- Pop-up elegante (avisos, confirmações, ajuda) -->
+    <div id="modal-root"></div>
+    <div id="toast" class="turn-toast" role="status" aria-live="polite"></div>
+    <canvas id="confetti" aria-hidden="true"></canvas>
 
-<!-- ============ ENTRAR ============ -->
-<main id="screen-auth" class="screen">
-    <section class="panel auth-box">
-        <h1 class="logo">♠ Clube do Pife ♥</h1>
-        <div class="tabs" role="tablist" aria-label="Como entrar">
-            <button type="button" role="tab" class="tab active" data-tab="guest">Convidado</button>
-            <button type="button" role="tab" class="tab" data-tab="login">Entrar</button>
-            <button type="button" role="tab" class="tab" data-tab="signup">Criar conta</button>
-        </div>
-        <p id="auth-hint" class="hint"></p>
+    <div id="splash" class="screen active">
+        <div class="login-box"><h1>Clube do Pife</h1><p class="muted">Conectando…</p></div>
+    </div>
 
-        <form id="form-guest" class="auth-form" autocomplete="off">
-            <div class="avatar-picker" data-picker role="radiogroup" aria-label="Escolha seu avatar"></div>
-            <label class="field"><span>Seu apelido</span>
-                <input id="guest-nick" maxlength="16" placeholder="Ex.: Zeca" autocomplete="off" required></label>
-            <button class="btn primary big" type="submit">Jogar como convidado</button>
-        </form>
-
-        <form id="form-login" class="auth-form" hidden>
-            <label class="field"><span>Usuário</span>
-                <input id="login-user" maxlength="16" autocomplete="username" autocapitalize="none" required></label>
-            <label class="field"><span>Senha</span>
-                <input id="login-pass" type="password" maxlength="64" autocomplete="current-password" required></label>
-            <button class="btn primary big" type="submit">Entrar</button>
-        </form>
-
-        <form id="form-signup" class="auth-form" hidden>
-            <div class="avatar-picker" data-picker role="radiogroup" aria-label="Escolha seu avatar"></div>
-            <label class="field"><span>Nome de usuário (3 a 16: letras, números, _ ou -)</span>
-                <input id="signup-user" maxlength="16" autocomplete="username" autocapitalize="none" required></label>
-            <label class="field"><span>Senha (mínimo 6)</span>
-                <input id="signup-pass" type="password" minlength="6" maxlength="64" autocomplete="new-password" required></label>
-            <button class="btn primary big" type="submit">Criar conta</button>
-        </form>
-
-        <p id="auth-error" class="error" role="alert"></p>
-        <button type="button" id="btn-auth-back" class="btn ghost" hidden>← Voltar ao saguão</button>
-        <button type="button" class="btn ghost small" data-help>❓ Como jogar</button>
-    </section>
-</main>
-
-<!-- ============ SAGUÃO ============ -->
-<main id="screen-lobby" class="screen">
-    <section class="panel lobby-box">
-        <div class="profile-bar">
-            <span id="lobby-avatar" class="big-avatar"></span>
-            <div class="profile-text">
-                <b id="lobby-name"></b>
-                <small id="lobby-kind"></small>
+    <!-- ============ ENTRAR ============ -->
+    <div id="screen-auth" class="screen">
+        <div class="login-box">
+            <h1>Clube do Pife</h1>
+            <div class="tabs" role="tablist" aria-label="Como entrar">
+                <button type="button" role="tab" class="tab active" data-tab="guest">Convidado</button>
+                <button type="button" role="tab" class="tab" data-tab="login">Entrar</button>
+                <button type="button" role="tab" class="tab" data-tab="signup">Criar conta</button>
             </div>
-            <span id="lobby-wins" class="trophy" title="Vitórias"></span>
-            <button type="button" id="btn-logout" class="btn ghost small">Sair</button>
+            <p id="auth-hint" class="note"></p>
+
+            <form id="form-guest" class="auth-form" autocomplete="off">
+                <div class="avatar-selection" data-picker role="radiogroup" aria-label="Escolha seu avatar"></div>
+                <input id="guest-nick" maxlength="16" placeholder="Seu apelido..." autocomplete="off" required>
+                <button class="main-btn" type="submit">Jogar como convidado</button>
+            </form>
+
+            <form id="form-login" class="auth-form" hidden>
+                <input id="login-user" maxlength="16" placeholder="Usuário" autocomplete="username" autocapitalize="none" required>
+                <input id="login-pass" type="password" maxlength="64" placeholder="Senha" autocomplete="current-password" required>
+                <button class="main-btn" type="submit">Entrar</button>
+            </form>
+
+            <form id="form-signup" class="auth-form" hidden>
+                <div class="avatar-selection" data-picker role="radiogroup" aria-label="Escolha seu avatar"></div>
+                <input id="signup-user" maxlength="16" placeholder="Usuário (3 a 16: letras, números, _ ou -)" autocomplete="username" autocapitalize="none" required>
+                <input id="signup-pass" type="password" minlength="6" maxlength="64" placeholder="Senha (mínimo 6)" autocomplete="new-password" required>
+                <button class="main-btn" type="submit">Criar conta</button>
+            </form>
+
+            <p id="auth-error" class="error" role="alert"></p>
+            <div class="link-row">
+                <button type="button" id="btn-auth-back" class="outline" hidden>← Voltar</button>
+                <button type="button" class="outline" data-help>❓ Como jogar</button>
+            </div>
         </div>
-        <p id="lobby-note" class="hint"></p>
-        <button type="button" id="btn-upgrade" class="btn small" hidden>⭐ Criar conta e guardar minhas vitórias</button>
+    </div>
 
-        <form id="form-join" class="join-form">
-            <label class="field"><span>Nome da sala</span>
-                <input id="join-room" maxlength="20" placeholder="MESA1" autocomplete="off"></label>
-            <label class="field"><span>Senha (opcional)</span>
-                <input id="join-pass" type="password" maxlength="64" placeholder="sem senha" autocomplete="off"></label>
-            <button class="btn primary big" type="submit">Criar / Entrar</button>
-        </form>
+    <!-- ============ SAGUÃO (salas) ============ -->
+    <div id="screen-lobby" class="screen">
+        <div class="login-box">
+            <h1>Clube do Pife</h1>
+            <div class="profile-bar">
+                <span id="lobby-avatar" class="big-avatar"></span>
+                <div class="profile-text">
+                    <b id="lobby-name"></b>
+                    <small id="lobby-kind"></small>
+                </div>
+                <span id="lobby-wins" class="trophy" title="Vitórias"></span>
+                <button type="button" id="btn-logout" class="danger-outline small">Sair</button>
+            </div>
+            <p id="lobby-note" class="note"></p>
+            <button type="button" id="btn-upgrade" class="highlight-btn" hidden>⭐ Criar conta e guardar minhas vitórias</button>
 
-        <h2 class="section-title">Salas abertas agora</h2>
-        <ul id="room-list" class="room-list"></ul>
-        <button type="button" class="btn ghost small" data-help>❓ Como jogar</button>
-    </section>
-</main>
+            <hr class="sep">
 
-<!-- ============ MESA ============ -->
-<main id="screen-game" class="screen">
-    <header class="topbar">
-        <div id="me-chip" class="me-chip"></div>
-        <div class="room-chip">Sala <b id="room-name"></b></div>
-        <div class="top-actions">
-            <button type="button" id="btn-help" class="icon-btn" aria-label="Como jogar">❓</button>
-            <button type="button" id="btn-chat" class="icon-btn" aria-label="Abrir chat">💬<span id="chat-dot" class="dot" hidden></span></button>
-            <button type="button" id="btn-menu" class="icon-btn" aria-label="Menu">☰</button>
+            <form id="form-join" class="join-form">
+                <div class="join-row">
+                    <input id="join-room" maxlength="20" placeholder="Nova Sala (Livre)" autocomplete="off">
+                    <input id="join-pass" type="password" maxlength="64" placeholder="Senha (Opcional)" autocomplete="off">
+                </div>
+                <button class="main-btn" type="submit">Criar / Entrar</button>
+            </form>
+
+            <div id="lobby-rooms">
+                <h4>Salas Abertas Agora:</h4>
+                <ul id="room-list" class="room-list"></ul>
+            </div>
+            <div class="link-row"><button type="button" class="outline" data-help>❓ Como jogar</button></div>
         </div>
-    </header>
+    </div>
 
-    <div id="hint" class="hintbar" role="status" aria-live="polite"></div>
+    <!-- ============ MESA ============ -->
+    <div id="screen-game" class="screen com-chat">
+        <div class="header">
+            <h2 id="player-name"></h2>
 
-    <section id="opponents" class="opps" aria-label="Adversários"></section>
+            <div id="status-message">Aguardando...</div>
 
-    <section class="table" aria-label="Mesa">
-        <div id="pile-deck" class="pile" role="button" tabindex="0" aria-label="Comprar do Monte">
-            <div class="pile-card"></div>
-            <span class="pile-label">Monte</span>
+            <div class="header-buttons">
+                <div class="emote-wrapper">
+                    <button type="button" id="btn-theme" class="action-btn outline">🎨 Mesa</button>
+                    <div id="theme-menu" class="emote-menu">
+                        <button type="button" class="theme-opt" data-theme="green" style="background:#1a472a">Verde</button>
+                        <button type="button" class="theme-opt" data-theme="blue" style="background:#0b2e59">Azul</button>
+                        <button type="button" class="theme-opt" data-theme="red" style="background:#7b1113">Vermelho</button>
+                        <button type="button" class="theme-opt" data-theme="black" style="background:#111111">Preto</button>
+                    </div>
+                </div>
+                <button type="button" id="btn-sound" class="action-btn outline" aria-label="Som">🔊</button>
+                <button type="button" id="btn-help" class="action-btn outline" aria-label="Como jogar">❓</button>
+                <button type="button" id="btn-start">Iniciar</button>
+                <button type="button" id="btn-reset" class="danger-outline">Resetar</button>
+                <button type="button" id="btn-leave" class="danger-outline">Sair</button>
+                <button type="button" id="btn-toggle-chat">Chat 💬<span id="chat-dot" class="dot" hidden></span></button>
+            </div>
         </div>
-        <div id="pile-wild" class="pile static">
-            <div class="pile-card"></div>
-            <span class="pile-label" id="wild-label">Curinga</span>
+
+        <div id="hint" class="hintbar" role="status" aria-live="polite"></div>
+
+        <div id="opponents-area"></div>
+
+        <div class="table-center">
+            <div id="pile-deck" class="deck-area">
+                <div id="deck-container"></div>
+                <button type="button" class="action-btn">Comprar Monte</button>
+            </div>
+
+            <div class="deck-area highlight-area">
+                <div class="status-label">Curinga da Rodada</div>
+                <div class="wildcard-wrapper">
+                    <div id="wildcard-container"></div>
+                    <div id="wildcard-badge" class="wildcard-badge" hidden>⭐ <span id="wildcard-text">-</span></div>
+                </div>
+            </div>
+
+            <div id="pile-discard" class="deck-area">
+                <div id="discard-container"></div>
+                <button type="button" class="action-btn">Comprar Lixo</button>
+            </div>
         </div>
-        <div id="pile-discard" class="pile" role="button" tabindex="0" aria-label="Comprar do Lixo">
-            <div class="pile-card"></div>
-            <span class="pile-label">Lixo</span>
+
+        <div id="meld-status" class="meld-status" aria-live="polite"></div>
+
+        <div class="layout-controls">
+            <button type="button" id="btn-sort" class="action-btn highlight-btn">🪄 Ordenar</button>
+
+            <button type="button" class="layout-btn" data-layout="overlap">Sobreposto</button>
+            <button type="button" class="layout-btn" data-layout="fan">Leque</button>
+            <button type="button" class="layout-btn" data-layout="flat">Aberto</button>
+
+            <button type="button" id="btn-discard" class="action-btn">Descartar</button>
+            <button type="button" id="btn-bater" class="action-btn danger btn-bater">BATER!</button>
         </div>
-    </section>
 
-    <section id="meld-status" class="meld-status" aria-live="polite"></section>
-    <section id="hand" class="hand mode-open" aria-label="Sua mão"></section>
+        <div id="my-hand" class="hand-area layout-overlap" aria-label="Sua mão"></div>
 
-    <div id="reactbar" class="reactbar" role="toolbar" aria-label="Reações rápidas"></div>
+        <div id="reactbar" class="reactbar" role="toolbar" aria-label="Reações rápidas"></div>
 
-    <nav class="actionbar" aria-label="Ações">
-        <button type="button" id="btn-sort" class="btn">🪄 Ordenar</button>
-        <button type="button" id="btn-discard" class="btn">Descartar</button>
-        <button type="button" id="btn-bater" class="btn danger">BATER!</button>
-    </nav>
+        <div id="chat-panel">
+            <div class="chat-header">
+                <span>Sala: <b id="display-room-name">Global</b></span>
+                <button type="button" id="btn-close-chat" aria-label="Fechar chat">❌</button>
+            </div>
+            <div id="chat-messages"></div>
+            <form id="chat-input-area" autocomplete="off">
+                <input type="text" id="chat-input" maxlength="200" placeholder="Provoque a galera..." enterkeyhint="send">
+                <button type="submit">Enviar</button>
+            </form>
+        </div>
+    </div>
 
-    <aside id="chat" class="chat" aria-label="Chat da sala">
-        <div class="chat-head"><span>💬 Sala <b id="chat-room"></b></span>
-            <button type="button" id="btn-chat-close" class="icon-btn" aria-label="Fechar chat">✕</button></div>
-        <div id="chat-messages" class="chat-messages"></div>
-        <form id="chat-form" class="chat-form" autocomplete="off">
-            <input id="chat-input" maxlength="200" placeholder="Escreva uma mensagem…" enterkeyhint="send">
-            <button class="btn" type="submit">Enviar</button>
-        </form>
-    </aside>
-</main>
+    <!-- ============ FIM DA RODADA ============ -->
+    <div id="game-over-screen" class="screen">
+        <div class="login-box wide">
+            <h1 id="winner-msg"></h1>
+            <p>Jogos validados pelo Sistema:</p>
+            <div id="winner-hand" class="winner-display"></div>
+            <table id="over-scoreboard" class="scoreboard"></table>
+            <button type="button" id="btn-new-round" class="main-btn">Nova Rodada</button>
+        </div>
+    </div>
 
-<div id="modal-root"></div>
-<div id="toast" class="toast" role="status" aria-live="polite"></div>
-<canvas id="confetti" aria-hidden="true"></canvas>
-
-<script src="/socket.io/socket.io.js"></script>
-<script src="rules.js"></script>
-<script src="client.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="rules.js"></script>
+    <script src="client.js"></script>
 </body>
 </html>

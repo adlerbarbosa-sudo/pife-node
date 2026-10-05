@@ -52,7 +52,7 @@ src/hub.js         Salas, turnos, identidades, vitórias (independente de rede, 
 src/store.js       Contas: scrypt + tokens de sessão em users.json
 public/rules.js    Regras do jogo — usado pelo servidor E pelo navegador (uma única fonte da verdade)
 public/client.js   Interface (sem innerHTML com dados de jogadores, sem handlers inline)
-public/style.css   Layout mobile-first
+public/style.css   Layout original do Clube do Pife (mesa verde, cartas sobrepostas, chat lateral)
 public/sw.js       Service worker "rede primeiro" (nunca prende o jogador numa versão antiga)
 test/              node:test — regras, contas e servidor
 ```
