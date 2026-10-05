@@ -2,164 +2,146 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Clube do Pife</title>
-    <link rel="manifest" href="manifest.json">
-    <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <meta name="description" content="Pife online com amigos: salas, chat, contas e placar de vitórias.">
     <meta name="theme-color" content="#1a472a">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="stylesheet" href="style.css">
 </head>
 <body class="theme-green">
-    <!-- Pop-up Elegante In-Game -->
-    <div id="custom-modal" class="custom-modal">
-        <div class="custom-modal-content">
-            <h3 id="custom-modal-title">Aviso</h3>
-            <p id="custom-modal-message"></p>
-            <div class="custom-modal-buttons">
-                <button id="custom-modal-btn-no" class="danger-outline" style="display:none;">Não</button>
-                <button id="custom-modal-btn-yes">OK</button>
-            </div>
+
+<div id="splash" class="screen active"><div class="splash-box"><div class="splash-logo">♠ ♥</div><p>Conectando…</p></div></div>
+
+<!-- ============ ENTRAR ============ -->
+<main id="screen-auth" class="screen">
+    <section class="panel auth-box">
+        <h1 class="logo">♠ Clube do Pife ♥</h1>
+        <div class="tabs" role="tablist" aria-label="Como entrar">
+            <button type="button" role="tab" class="tab active" data-tab="guest">Convidado</button>
+            <button type="button" role="tab" class="tab" data-tab="login">Entrar</button>
+            <button type="button" role="tab" class="tab" data-tab="signup">Criar conta</button>
         </div>
-    </div>
+        <p id="auth-hint" class="hint"></p>
 
-    <div id="turn-toast" class="turn-toast"></div>
+        <form id="form-guest" class="auth-form" autocomplete="off">
+            <div class="avatar-picker" data-picker role="radiogroup" aria-label="Escolha seu avatar"></div>
+            <label class="field"><span>Seu apelido</span>
+                <input id="guest-nick" maxlength="16" placeholder="Ex.: Zeca" autocomplete="off" required></label>
+            <button class="btn primary big" type="submit">Jogar como convidado</button>
+        </form>
 
-    <div id="login-screen" class="screen">
-        <div class="login-box">
-            <h1>Clube do Pife</h1>
-            <div class="avatar-selection">
-                <label><input type="radio" name="avatar" value="🤠" checked> 🤠</label>
-                <label><input type="radio" name="avatar" value="👽"> 👽</label>
-                <label><input type="radio" name="avatar" value="🤖"> 🤖</label>
-                <label><input type="radio" name="avatar" value="🦊"> 🦊</label>
-                <label><input type="radio" name="avatar" value="😎"> 😎</label>
-                <label><input type="radio" name="avatar" value="🤡"> 🤡</label>
+        <form id="form-login" class="auth-form" hidden>
+            <label class="field"><span>Usuário</span>
+                <input id="login-user" maxlength="16" autocomplete="username" autocapitalize="none" required></label>
+            <label class="field"><span>Senha</span>
+                <input id="login-pass" type="password" maxlength="64" autocomplete="current-password" required></label>
+            <button class="btn primary big" type="submit">Entrar</button>
+        </form>
+
+        <form id="form-signup" class="auth-form" hidden>
+            <div class="avatar-picker" data-picker role="radiogroup" aria-label="Escolha seu avatar"></div>
+            <label class="field"><span>Nome de usuário (3 a 16: letras, números, _ ou -)</span>
+                <input id="signup-user" maxlength="16" autocomplete="username" autocapitalize="none" required></label>
+            <label class="field"><span>Senha (mínimo 6)</span>
+                <input id="signup-pass" type="password" minlength="6" maxlength="64" autocomplete="new-password" required></label>
+            <button class="btn primary big" type="submit">Criar conta</button>
+        </form>
+
+        <p id="auth-error" class="error" role="alert"></p>
+        <button type="button" id="btn-auth-back" class="btn ghost" hidden>← Voltar ao saguão</button>
+        <button type="button" class="btn ghost small" data-help>❓ Como jogar</button>
+    </section>
+</main>
+
+<!-- ============ SAGUÃO ============ -->
+<main id="screen-lobby" class="screen">
+    <section class="panel lobby-box">
+        <div class="profile-bar">
+            <span id="lobby-avatar" class="big-avatar"></span>
+            <div class="profile-text">
+                <b id="lobby-name"></b>
+                <small id="lobby-kind"></small>
             </div>
-            
-            <input type="text" id="username" placeholder="Seu apelido..." autocomplete="off">
-            
-            <hr style="border-color:var(--accent-color); margin: 15px 0; opacity: 0.3;">
-            
-            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                <input type="text" id="room" placeholder="Nova Sala (Livre)" autocomplete="off" style="margin-bottom: 0;">
-                <input type="password" id="room-password" placeholder="Senha (Opcional)" autocomplete="off" style="margin-bottom: 0;">
-            </div>
-            
-            <button onclick="register()" style="width: 100%; font-size: 1.2rem; padding: 12px;">Criar / Entrar</button>
-
-            <!-- Saguão de Salas Fixo -->
-            <div id="lobby-rooms" style="margin-top: 20px; text-align: left; background: rgba(0,0,0,0.5); padding: 15px; border-radius: 10px;">
-                <h4 style="margin-bottom: 10px; color: var(--accent-color); text-transform: uppercase; font-size: 0.9rem;">Salas Abertas Agora:</h4>
-                <ul id="room-list" class="room-list">
-                    <li style="text-align:center; color:#ccc; font-style:italic;">Conectando ao Saguão...</li>
-                </ul>
-            </div>
+            <span id="lobby-wins" class="trophy" title="Vitórias"></span>
+            <button type="button" id="btn-logout" class="btn ghost small">Sair</button>
         </div>
-    </div>
+        <p id="lobby-note" class="hint"></p>
+        <button type="button" id="btn-upgrade" class="btn small" hidden>⭐ Criar conta e guardar minhas vitórias</button>
 
-    <div id="game-screen" class="screen com-chat" style="display: none;">
-        <div class="header">
-            <h2 id="player-name"></h2>
-            
-            <div id="status-message">Aguardando...</div>
-            
-            <div class="header-buttons">
-                <div class="emote-wrapper">
-                    <button onclick="toggleThemeMenu()" class="action-btn outline">🎨 Mesa</button>
-                    <div id="theme-menu" class="emote-menu">
-                        <button onclick="changeTheme('theme-green')" style="background: #1a472a; padding: 5px; border:none; border-radius:5px; color:white;">Verde</button>
-                        <button onclick="changeTheme('theme-blue')" style="background: #0b2e59; padding: 5px; border:none; border-radius:5px; color:white;">Azul</button>
-                        <button onclick="changeTheme('theme-red')" style="background: #7b1113; padding: 5px; border:none; border-radius:5px; color:white;">Vermelho</button>
-                        <button onclick="changeTheme('theme-black')" style="background: #111111; padding: 5px; border:none; border-radius:5px; color:white;">Preto</button>
-                    </div>
-                </div>
+        <form id="form-join" class="join-form">
+            <label class="field"><span>Nome da sala</span>
+                <input id="join-room" maxlength="20" placeholder="MESA1" autocomplete="off"></label>
+            <label class="field"><span>Senha (opcional)</span>
+                <input id="join-pass" type="password" maxlength="64" placeholder="sem senha" autocomplete="off"></label>
+            <button class="btn primary big" type="submit">Criar / Entrar</button>
+        </form>
 
-                <div class="emote-wrapper">
-                    <button onclick="toggleEmoteMenu()" class="action-btn outline">😀 Reagir</button>
-                    <div id="emote-menu" class="emote-menu">
-                        <span onclick="sendEmote('😂')">😂</span>
-                        <span onclick="sendEmote('😡')">😡</span>
-                        <span onclick="sendEmote('🍻')">🍻</span>
-                        <span onclick="sendEmote('💔')">💔</span>
-                        <span onclick="sendEmote('😎')">😎</span>
-                        <span onclick="sendEmote('😭')">😭</span>
-                    </div>
-                </div>
+        <h2 class="section-title">Salas abertas agora</h2>
+        <ul id="room-list" class="room-list"></ul>
+        <button type="button" class="btn ghost small" data-help>❓ Como jogar</button>
+    </section>
+</main>
 
-                <button id="btn-start" onclick="startGame()">Iniciar</button>
-                <button onclick="resetGame()" class="danger-outline">Resetar</button>
-                <button onclick="leaveTable()" class="danger-outline">Sair</button>
-                <button id="btn-toggle-chat" onclick="toggleMobileChat()" style="display: none;">Chat 💬</button>
-            </div>
+<!-- ============ MESA ============ -->
+<main id="screen-game" class="screen">
+    <header class="topbar">
+        <div id="me-chip" class="me-chip"></div>
+        <div class="room-chip">Sala <b id="room-name"></b></div>
+        <div class="top-actions">
+            <button type="button" id="btn-help" class="icon-btn" aria-label="Como jogar">❓</button>
+            <button type="button" id="btn-chat" class="icon-btn" aria-label="Abrir chat">💬<span id="chat-dot" class="dot" hidden></span></button>
+            <button type="button" id="btn-menu" class="icon-btn" aria-label="Menu">☰</button>
         </div>
+    </header>
 
-        <div id="opponents-area"></div>
+    <div id="hint" class="hintbar" role="status" aria-live="polite"></div>
 
-        <div class="table-center">
-            <div class="deck-area">
-                <div id="deck-container">
-                    <div class="card back" onclick="drawDeck()">
-                        Monte
-                        <div class="deck-count-badge" id="deck-count">--</div>
-                    </div>
-                </div>
-                <button class="action-btn" onclick="drawDeck()">Comprar Monte</button>
-            </div>
-            
-            <div class="deck-area highlight-area">
-                <div class="status-label" style="margin-bottom: 5px;">Curinga da Rodada</div>
-                <!-- Display Elegante para o Curinga -->
-                <div class="wildcard-wrapper">
-                    <div id="wildcard-container" style="opacity: 0.5; transform: scale(0.9);">
-                        <div class="card empty">Morta</div>
-                    </div>
-                    <div id="wildcard-badge" class="wildcard-badge" style="display: none;">⭐ <span id="wildcard-text">-</span></div>
-                </div>
-            </div>
+    <section id="opponents" class="opps" aria-label="Adversários"></section>
 
-            <div class="deck-area" ondragover="dragOver(event)" ondrop="dropToDiscard(event)">
-                <div id="discard-container">
-                    <div class="card empty" onclick="drawDiscard()">Lixo</div>
-                </div>
-                <button class="action-btn" onclick="drawDiscard()">Comprar Lixo</button>
-            </div>
+    <section class="table" aria-label="Mesa">
+        <div id="pile-deck" class="pile" role="button" tabindex="0" aria-label="Comprar do Monte">
+            <div class="pile-card"></div>
+            <span class="pile-label">Monte</span>
         </div>
-
-        <div class="layout-controls">
-            <button class="action-btn highlight-btn" onclick="autoSort()">🪄 Ordenar</button>
-            
-            <button class="layout-btn" onclick="setLayout('layout-overlap')">Sobreposto</button>
-            <button class="layout-btn" onclick="setLayout('layout-fan')">Leque</button>
-            <button class="layout-btn" onclick="setLayout('layout-flat')">Aberto</button>
-            
-            <button class="action-btn danger btn-bater" onclick="bater()">BATER!</button>
+        <div id="pile-wild" class="pile static">
+            <div class="pile-card"></div>
+            <span class="pile-label" id="wild-label">Curinga</span>
         </div>
-
-        <div id="my-hand" class="hand-area layout-overlap"></div>
-    </div>
-
-    <div id="chat-panel" style="display: none;">
-        <div class="chat-header">
-            Sala: <span id="display-room-name">Global</span>
-            <button id="btn-close-chat" onclick="toggleMobileChat()" style="display: none;">❌</button>
+        <div id="pile-discard" class="pile" role="button" tabindex="0" aria-label="Comprar do Lixo">
+            <div class="pile-card"></div>
+            <span class="pile-label">Lixo</span>
         </div>
-        <div id="chat-messages"></div>
-        <div id="chat-input-area">
-            <input type="text" id="chat-input" placeholder="Provoque a galera..." onkeypress="handleChatKey(event)" autocomplete="off">
-            <button onclick="sendChatMessage()">Enviar</button>
-        </div>
-    </div>
+    </section>
 
-    <div id="game-over-screen" class="screen" style="display: none;">
-        <div class="login-box" style="max-width: 90vw; z-index: 500;">
-            <h1 id="winner-msg" style="font-size: 2.5rem; text-shadow: 2px 2px 10px rgba(0,0,0,0.5);"></h1>
-            <p>Jogos validados pelo Sistema:</p>
-            <div id="winner-hand" class="winner-display"></div>
-            <button onclick="backToLobby()" style="margin-top: 30px; padding: 15px 30px; font-size: 1.2rem;">Nova Rodada</button>
-        </div>
-    </div>
+    <section id="meld-status" class="meld-status" aria-live="polite"></section>
+    <section id="hand" class="hand mode-open" aria-label="Sua mão"></section>
 
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="client.js"></script>
+    <nav class="actionbar" aria-label="Ações">
+        <button type="button" id="btn-sort" class="btn">🪄 Ordenar</button>
+        <button type="button" id="btn-discard" class="btn">Descartar</button>
+        <button type="button" id="btn-bater" class="btn danger">BATER!</button>
+    </nav>
+
+    <aside id="chat" class="chat" aria-label="Chat da sala">
+        <div class="chat-head"><span>💬 Sala <b id="chat-room"></b></span>
+            <button type="button" id="btn-chat-close" class="icon-btn" aria-label="Fechar chat">✕</button></div>
+        <div id="chat-messages" class="chat-messages"></div>
+        <form id="chat-form" class="chat-form" autocomplete="off">
+            <input id="chat-input" maxlength="200" placeholder="Escreva uma mensagem…" enterkeyhint="send">
+            <button class="btn" type="submit">Enviar</button>
+        </form>
+    </aside>
+</main>
+
+<div id="modal-root"></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<canvas id="confetti" aria-hidden="true"></canvas>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="rules.js"></script>
+<script src="client.js"></script>
 </body>
 </html>

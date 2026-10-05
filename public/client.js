@@ -1,767 +1,909 @@
-const socket = io();
-let currentLayout = 'layout-overlap';
-let localHand = []; 
-let currentWildcardValue = null;
-let isFirstDeal = true;
+/* Clube do Pife — cliente.
+ * Regras: nada de innerHTML com dados de jogadores (tudo via DOM/textContent) e nada de handlers inline,
+ * assim o conteúdo enviado por outros jogadores nunca vira código (antes era possível XSS pelo chat/nome). */
+(() => {
+    'use strict';
 
-let amIPlaying = false; 
-let hasDrawnThisTurn = false;
-let wasMyTurn = false; 
+    const R = window.PifeRules;
+    const AVATARS = ['🤠', '👽', '🤖', '🦊', '😎', '🤡'];
+    const EMOTES = ['😂', '😡', '🍻', '💔', '😎', '😭', '👏', '🤔'];
+    const THEMES = { green: '#1a472a', blue: '#0b2e59', red: '#7b1113', black: '#121212' };
 
-let draggingCardIndex = null;
-let ghostElement = null;
-let targetInsertIndex = null;
-let dragStartX = 0;
-let dragStartY = 0;
-let isMoved = false;
+    /* ---------- utilidades ---------- */
+    const $ = (id) => document.getElementById(id);
 
-let myWins = parseInt(localStorage.getItem('pife_wins')) || 0;
-let mySessionId = localStorage.getItem('pife_sessionId');
-if (!mySessionId) {
-    mySessionId = Math.random().toString(36).substr(2, 10);
-    localStorage.setItem('pife_sessionId', mySessionId);
-}
-
-// POP-UPS ELEGANTES
-function customAlert(msg) {
-    document.getElementById('custom-modal-title').innerText = 'Aviso';
-    document.getElementById('custom-modal-message').innerText = msg;
-    document.getElementById('custom-modal-btn-no').style.display = 'none';
-    
-    const yesBtn = document.getElementById('custom-modal-btn-yes');
-    yesBtn.innerText = 'OK';
-    yesBtn.onclick = () => {
-        document.getElementById('custom-modal').classList.remove('show');
-    };
-    document.getElementById('custom-modal').classList.add('show');
-}
-
-function customConfirm(msg, onYes) {
-    document.getElementById('custom-modal-title').innerText = 'Confirmação';
-    document.getElementById('custom-modal-message').innerText = msg;
-    document.getElementById('custom-modal-btn-no').style.display = 'inline-block';
-    
-    const yesBtn = document.getElementById('custom-modal-btn-yes');
-    const noBtn = document.getElementById('custom-modal-btn-no');
-    
-    yesBtn.innerText = 'Sim';
-    noBtn.innerText = 'Não';
-    
-    yesBtn.onclick = () => {
-        document.getElementById('custom-modal').classList.remove('show');
-        if(onYes) onYes();
-    };
-    noBtn.onclick = () => {
-        document.getElementById('custom-modal').classList.remove('show');
-    };
-    document.getElementById('custom-modal').classList.add('show');
-}
-
-// LIMPEZA SEGURA (Não reconstrói a mão atoa para não bugar o touch)
-function forceCleanDrag() {
-    draggingCardIndex = null;
-    targetInsertIndex = null;
-    document.querySelectorAll('.ghost-card').forEach(el => el.remove());
-    document.querySelectorAll('.drop-placeholder').forEach(el => el.remove());
-    document.querySelectorAll('.dragging-origin').forEach(el => el.classList.remove('dragging-origin'));
-    ghostElement = null;
-}
-
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') { forceCleanDrag(); renderHand(); }
-});
-window.addEventListener('blur', () => { forceCleanDrag(); renderHand(); });
-window.addEventListener('error', () => { forceCleanDrag(); renderHand(); });
-
-window.onload = () => {
-    let savedName = localStorage.getItem('pife_name');
-    let savedAvatar = localStorage.getItem('pife_avatar');
-    let savedRoom = localStorage.getItem('pife_room');
-    let savedTheme = localStorage.getItem('pife_theme') || 'theme-green';
-    let inRoom = localStorage.getItem('pife_in_room') === 'true'; 
-    
-    if (savedName) document.getElementById('username').value = savedName;
-    if (savedRoom) document.getElementById('room').value = savedRoom;
-    if (savedAvatar) {
-        const radio = document.querySelector(`input[name="avatar"][value="${savedAvatar}"]`);
-        if (radio) radio.checked = true;
-    }
-    document.body.className = savedTheme;
-
-    if (inRoom && savedName) register();
-};
-
-socket.on('room_list', (list) => {
-    const ul = document.getElementById('room-list');
-    ul.innerHTML = '';
-    
-    if(list.length === 0) {
-        ul.innerHTML = '<li style="text-align:center; color:#ccc; font-style:italic; padding: 10px;">Nenhuma sala aberta no momento. Crie a sua!</li>';
-        return;
-    }
-    
-    list.forEach(r => {
-        const li = document.createElement('li');
-        li.className = 'room-item';
-        li.innerHTML = `
-            <span>${r.hasPassword ? '🔒' : '🟢'} <b>${r.id}</b></span>
-            <span class="room-badge">${r.count}/4 Jogs</span>
-        `;
-        li.onclick = () => {
-            document.getElementById('room').value = r.id;
-            if(r.hasPassword) {
-                const pwd = prompt(`A sala [ ${r.id} ] exige senha:`);
-                if (pwd !== null) {
-                    document.getElementById('room-password').value = pwd;
-                    register();
-                }
-            } else {
-                document.getElementById('room-password').value = '';
-                register();
-            }
-        };
-        ul.appendChild(li);
-    });
-});
-
-function changeTheme(themeName) {
-    document.body.className = themeName;
-    localStorage.setItem('pife_theme', themeName);
-    document.getElementById('theme-menu').classList.remove('show');
-}
-
-function toggleThemeMenu() {
-    const em = document.getElementById('emote-menu');
-    if(em) em.classList.remove('show'); 
-    document.getElementById('theme-menu').classList.toggle('show');
-}
-
-function toggleEmoteMenu() {
-    const tm = document.getElementById('theme-menu');
-    if(tm) tm.classList.remove('show'); 
-    document.getElementById('emote-menu').classList.toggle('show');
-}
-
-function sendEmote(emoji) {
-    socket.emit('send_emote', emoji);
-    document.getElementById('emote-menu').classList.remove('show');
-}
-
-document.addEventListener('click', (e) => {
-    if (!e.target.closest('.emote-wrapper')) {
-        const em = document.getElementById('emote-menu');
-        const tm = document.getElementById('theme-menu');
-        if(em) em.classList.remove('show');
-        if(tm) tm.classList.remove('show');
-    }
-});
-
-socket.on('receive_emote', (data) => {
-    try { playSFX('pop'); } catch(e){} 
-    const el = document.createElement('div');
-    el.className = 'floating-emote';
-    el.innerText = data.emote;
-    
-    let originEl = (data.id === socket.id) ? document.getElementById('player-name') : document.getElementById(`opp-${data.id}`);
-
-    if (originEl) {
-        const rect = originEl.getBoundingClientRect();
-        el.style.left = `${rect.left + (rect.width / 2)}px`;
-        el.style.top = `${rect.top}px`;
-    } else {
-        el.style.left = `50%`;
-        el.style.top = `50%`;
-    }
-
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 2500); 
-});
-
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-function playSFX(type) {
-    if(audioCtx.state === 'suspended') audioCtx.resume();
-    const osc = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-    osc.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    
-    if (type === 'draw') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(300, audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(500, audioCtx.currentTime + 0.1);
-        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.1);
-    } 
-    else if (type === 'discard') {
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(400, audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(200, audioCtx.currentTime + 0.1);
-        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.1);
-    }
-    else if (type === 'turn') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(659.25, audioCtx.currentTime); 
-        osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.1); 
-        gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.3);
-    }
-    else if (type === 'pop') {
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
-        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.1);
-    }
-    else if (type === 'win') {
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(440, audioCtx.currentTime);
-        osc.frequency.setValueAtTime(554.37, audioCtx.currentTime + 0.1);
-        osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.2);
-        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.4);
-        osc.start(); osc.stop(audioCtx.currentTime + 0.4);
-    }
-}
-
-// Tratamento de falha grave
-socket.on('login_error', (msg) => {
-    customAlert(msg);
-    localStorage.removeItem('pife_in_room');
-    document.getElementById('login-screen').style.display = 'flex';
-    document.getElementById('game-screen').style.display = 'none';
-    document.getElementById('chat-panel').style.display = 'none';
-});
-
-// AVISO IN-GAME (Sem expulsão)
-socket.on('alerta', (msg) => {
-    customAlert(msg);
-});
-
-socket.on('play_sound', playSFX);
-socket.on('game_started', () => { 
-    isFirstDeal = true; 
-});
-
-function register() {
-    const name = document.getElementById('username').value;
-    const room = document.getElementById('room').value || 'MESA1';
-    const passwordElem = document.getElementById('room-password');
-    const password = passwordElem ? passwordElem.value : '';
-    const avatar = document.querySelector('input[name="avatar"]:checked').value;
-    
-    if (name.trim()) {
-        localStorage.setItem('pife_name', name);
-        localStorage.setItem('pife_room', room);
-        localStorage.setItem('pife_avatar', avatar);
-        
-        socket.emit('register', { sessionId: mySessionId, name, avatar, room, password, wins: myWins });
-        if(audioCtx.state === 'suspended') audioCtx.resume();
-    }
-}
-
-socket.on('registered_success', () => {
-    localStorage.setItem('pife_in_room', 'true'); 
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('game-screen').style.display = 'flex';
-    document.getElementById('chat-panel').style.display = 'flex';
-});
-
-socket.on('kicked_by_admin', () => {
-    customAlert('Você foi expulso pelo Administrador da sala.');
-    localStorage.removeItem('pife_in_room'); 
-    document.getElementById('game-screen').style.display = 'none';
-    document.getElementById('chat-panel').style.display = 'none';
-    document.getElementById('login-screen').style.display = 'flex';
-    localHand = [];
-    socket.emit('leaveTable');
-});
-
-function kickPlayerReq(targetSessionId) {
-    customConfirm('Tem certeza que deseja expulsar este jogador da sala?', () => {
-        socket.emit('kick_player', targetSessionId);
-    });
-}
-
-function startGame() { socket.emit('startGame'); }
-
-function resetGame() { 
-    customConfirm('Resetar a mesa cancelará a partida de todos. Continuar?', () => {
-        socket.emit('resetGame');
-    });
-}
-
-function drawDeck() { socket.emit('draw_deck'); }
-function drawDiscard() { socket.emit('draw_discard'); }
-function bater() { socket.emit('bater'); }
-
-function leaveTable() {
-    customConfirm('Deseja mesmo levantar da mesa? Você voltará para o Saguão.', () => {
-        localStorage.removeItem('pife_in_room'); 
-        socket.emit('leaveTable');
-        document.getElementById('game-screen').style.display = 'none';
-        document.getElementById('chat-panel').style.display = 'none';
-        document.getElementById('login-screen').style.display = 'flex';
-        localHand = [];
-    });
-}
-
-const cardValToNum = { 'A':1, '2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9, '10':10, 'J':11, 'Q':12, 'K':13 };
-const suitOrder = { '♥': 1, '♦': 2, '♣': 3, '♠': 4 };
-
-// REGRA TRINCA
-function isValidSetForSort(group, wildcardValue) {
-    let normals = group.filter(c => c.value !== wildcardValue);
-    let wildcards = group.length - normals.length;
-
-    if (wildcards >= 2) return true;
-    if (wildcards === 1) {
-        let [n1, n2] = normals;
-        if (n1.value === n2.value) return n1.suit !== n2.suit;
-        if (n1.suit === n2.suit) {
-            let v1 = cardValToNum[n1.value];
-            let v2 = cardValToNum[n2.value];
-            if (v1 > v2) { let temp = v1; v1 = v2; v2 = temp; }
-            let diff = v2 - v1;
-            if (diff === 1 || diff === 2) return true;
-            if (v1 === 1 && v2 === 12) return true;
-            if (v1 === 1 && v2 === 13) return true;
+    function el(tag, attrs, ...kids) {
+        const n = document.createElement(tag);
+        for (const [k, v] of Object.entries(attrs || {})) {
+            if (v == null || v === false) continue;
+            if (k === 'class') n.className = v;
+            else if (k === 'text') n.textContent = v;
+            else if (k === 'dataset') Object.assign(n.dataset, v);
+            else if (k === 'on') for (const [ev, fn] of Object.entries(v)) n.addEventListener(ev, fn);
+            else n.setAttribute(k, v === true ? '' : v);
         }
-        return false;
+        for (const kid of kids.flat()) {
+            if (kid == null || kid === false) continue;
+            n.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+        }
+        return n;
     }
-    if (wildcards === 0) {
-        let [n1, n2, n3] = normals;
-        if (n1.value === n2.value && n2.value === n3.value) {
-            if (n1.suit !== n2.suit && n1.suit !== n3.suit && n2.suit !== n3.suit) return true;
-            return false;
-        }
-        if (n1.suit === n2.suit && n2.suit === n3.suit) {
-            let nums = [cardValToNum[n1.value], cardValToNum[n2.value], cardValToNum[n3.value]].sort((a,b) => a - b);
-            if (nums[0] + 1 === nums[1] && nums[1] + 1 === nums[2]) return true;
-            if (nums[0] === 1 && nums[1] === 12 && nums[2] === 13) return true;
-        }
-        return false;
+    const mkStore = (area) => ({
+        get(k) { try { return area.getItem(k); } catch (e) { return null; } },
+        set(k, v) { try { area.setItem(k, v); } catch (e) { /* modo privado */ } },
+        del(k) { try { area.removeItem(k); } catch (e) { /* ignore */ } },
+    });
+    const ls = mkStore(window.localStorage);
+    const ss = mkStore(window.sessionStorage);
+
+    function newGuestId() {
+        const a = new Uint8Array(16);
+        crypto.getRandomValues(a);
+        return [...a].map((b) => b.toString(16).padStart(2, '0')).join('');
     }
-    return false;
-}
+    const getGuest = () => { try { return JSON.parse(ss.get('pife_guest') || 'null'); } catch (e) { return null; } };
 
-function autoSort() {
-    if(localHand.length === 0) return;
-    try {
-        let sets = [];
-        let remaining = [...localHand];
-        let found = true;
+    /* ---------- estado ---------- */
+    let profile = null;            // { type, name, avatar, wins }
+    let game = null;               // último gameState
+    let localHand = [];            // mão na ordem escolhida pelo jogador
+    let selectedId = null;
+    let layout = ls.get('pife_layout') || 'open';
+    let muted = ls.get('pife_mute') === '1';
+    let chosenAvatar = ls.get('pife_avatar') && AVATARS.includes(ls.get('pife_avatar')) ? ls.get('pife_avatar') : AVATARS[0];
+    let upgradeMode = false;
+    let screen = 'splash';
+    let joinSeq = 0;
+    let lastRoomId = null;
+    let wasMyTurn = false;
+    let chatOpen = false;
+    let drag = null;
+    let pendingState = null;
 
-        while(found && remaining.length >= 3) {
-            found = false;
-            for(let i=0; i<remaining.length; i++) {
-                for(let j=i+1; j<remaining.length; j++) {
-                    for(let k=j+1; k<remaining.length; k++) {
-                        if(isValidSetForSort([remaining[i], remaining[j], remaining[k]], currentWildcardValue)) {
-                            sets.push(remaining[i], remaining[j], remaining[k]);
-                            let toRemove = [remaining[i].id, remaining[j].id, remaining[k].id];
-                            remaining = remaining.filter(c => !toRemove.includes(c.id));
-                            found = true;
-                            break;
-                        }
-                    }
-                    if(found) break;
-                }
-                if(found) break;
-            }
-        }
+    const socket = io();
 
-        remaining.sort((a,b) => {
-            if(suitOrder[a.suit] !== suitOrder[b.suit]) return suitOrder[a.suit] - suitOrder[b.suit];
-            return cardValToNum[a.value] - cardValToNum[b.value];
+    function ask(ev, payload) {
+        return new Promise((resolve) => {
+            socket.timeout(8000).emit(ev, payload, (err, res) => {
+                resolve(err ? { ok: false, error: 'O servidor não respondeu. Tente de novo.', timeout: true } : res);
+            });
         });
-
-        localHand = [...sets, ...remaining];
-        showToast('🪄 Mão Inteligentemente Ordenada!', true);
-        renderHand();
-    } catch(err) {
-        console.error("Erro no autoSort", err);
-        showToast('Falha ao ordenar.', false);
-    }
-}
-
-function setLayout(layoutClass) {
-    currentLayout = layoutClass;
-    renderHand();
-}
-
-function toggleGroup(cardId) {
-    const cardEl = document.getElementById(`card-${cardId}`);
-    if(cardEl) cardEl.classList.toggle('grouped');
-}
-
-function getSuitColor(suit) { return (suit === '♥' || suit === '♦') ? 'red' : 'black'; }
-
-// RENDERIZAÇÃO DA CARTA COM INJEÇÃO DIRETA DE STYLE (Conserta sumiço no PC)
-function renderCardHTML(card, isWildcard = false, addAnim = false, index = 0, layout = '') {
-    if (!card) return `<div class="card empty">Vazio</div>`;
-    const wcClass = isWildcard ? 'is-wildcard' : '';
-    const animClass = addAnim ? 'animate-deal' : '';
-    
-    let customStyle = `z-index: ${index};`;
-    if (layout === 'layout-fan') {
-        let offset = index - (localHand.length / 2);
-        let rot = offset * 8; 
-        customStyle += ` transform: rotate(${rot}deg);`;
     }
 
-    return `
-        <div id="card-${card.id}" class="card ${getSuitColor(card.suit)} ${wcClass} ${animClass}"
-             style="${customStyle}"
-             oncontextmenu="toggleGroup('${card.id}'); return false;"
-             ondblclick="toggleGroup('${card.id}')">
-            <div class="card-mini">${card.value}<br>${card.suit}</div>
-            <div class="card-center">${card.suit}</div>
-            <div class="card-mini-bottom">${card.value}<br>${card.suit}</div>
-        </div>
-    `;
-}
-
-function initCardDrag(e, index) {
-    if (e.button !== 0 && e.type !== 'touchstart') return; 
-    
-    if (e.type === 'mousedown') e.preventDefault();
-    if (draggingCardIndex !== null) return; 
-
-    // Limpa fantasmas residuais de forma segura (Sem renderHand)
-    document.querySelectorAll('.ghost-card').forEach(el => el.remove());
-    document.querySelectorAll('.drop-placeholder').forEach(el => el.remove());
-    document.querySelectorAll('.dragging-origin').forEach(el => el.classList.remove('dragging-origin'));
-
-    draggingCardIndex = index;
-    isMoved = false;
-    
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    dragStartX = clientX;
-    dragStartY = clientY;
-    
-    const cardObj = localHand[index];
-    const cardEl = document.getElementById(`card-${cardObj.id}`);
-    
-    ghostElement = cardEl.cloneNode(true);
-    ghostElement.id = 'ghost-card';
-    ghostElement.classList.add('ghost-card');
-    ghostElement.style.transform = 'scale(1.1) rotate(4deg)'; 
-    document.body.appendChild(ghostElement);
-    
-    cardEl.classList.add('dragging-origin');
-    updateGhostPosition(clientX, clientY);
-    
-    window.addEventListener('mousemove', onDragMove);
-    window.addEventListener('touchmove', onDragMove, { passive: false });
-    window.addEventListener('mouseup', onDragEnd);
-    window.addEventListener('touchend', onDragEnd);
-    window.addEventListener('touchcancel', onDragEnd);
-}
-
-function updateGhostPosition(x, y) {
-    if (ghostElement) {
-        ghostElement.style.left = `${x - 40}px`;
-        ghostElement.style.top = `${y - 50}px`;
-    }
-}
-
-function isOverDiscardArea(x, y) {
-    const discardEl = document.getElementById('discard-container');
-    if (!discardEl) return false;
-    const rect = discardEl.getBoundingClientRect();
-    return (x >= rect.left - 30 && x <= rect.right + 30 && y >= rect.top - 30 && y <= rect.bottom + 30);
-}
-
-function onDragMove(e) {
-    if (draggingCardIndex === null) return;
-
-    if (e.cancelable) e.preventDefault(); // BLOQUEIA SCROLL NATIVO NO ARRASTO
-
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    
-    if (Math.abs(clientX - dragStartX) > 8 || Math.abs(clientY - dragStartY) > 8) {
-        isMoved = true;
+    /* ---------- telas ---------- */
+    const SCREENS = { splash: 'splash', auth: 'screen-auth', lobby: 'screen-lobby', game: 'screen-game' };
+    function show(name) {
+        screen = name;
+        Object.entries(SCREENS).forEach(([k, id]) => $(id).classList.toggle('active', k === name));
+        window.scrollTo(0, 0);
     }
 
-    updateGhostPosition(clientX, clientY);
+    /* ---------- toast, modal, som, confete ---------- */
+    let toastTimer = null;
+    function toast(msg, ms) {
+        const t = $('toast');
+        t.textContent = msg;
+        t.classList.add('show');
+        clearTimeout(toastTimer);
+        const dur = ms === undefined ? Math.min(7000, 2200 + msg.length * 35) : ms;
+        if (dur > 0) toastTimer = setTimeout(() => t.classList.remove('show'), dur);
+    }
+    function hideToast() { clearTimeout(toastTimer); $('toast').classList.remove('show'); }
 
-    const discardArea = document.querySelector('.deck-area:nth-child(3)');
-    if (isOverDiscardArea(clientX, clientY)) {
-        discardArea?.classList.add('drop-target');
-    } else {
-        discardArea?.classList.remove('drop-target');
+    let modalClose = null;
+    function openModal(children, { cls = '', dismissable = true, onClose } = {}) {
+        closeModal();
+        const modal = el('div', { class: `modal ${cls}`, role: 'dialog', 'aria-modal': 'true' }, children);
+        const back = el('div', { class: 'modal-backdrop' }, modal);
+        const close = () => { back.remove(); modalClose = null; if (onClose) onClose(); };
+        if (dismissable) back.addEventListener('pointerdown', (e) => { if (e.target === back) close(); });
+        $('modal-root').append(back);
+        modalClose = close;
+        const first = modal.querySelector('input, button');
+        if (first) first.focus({ preventScroll: true });
+        return close;
+    }
+    function closeModal() { if (modalClose) modalClose(); }
+
+    function alertDialog(msg, title = 'Aviso') {
+        return new Promise((resolve) => {
+            openModal([
+                el('h3', { text: title }), el('p', { text: msg }),
+                el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', on: { click: () => closeModal() } }, 'OK')),
+            ], { onClose: resolve });
+        });
+    }
+    function confirmDialog(msg, { title = 'Confirmação', yes = 'Sim', no = 'Cancelar', danger = false } = {}) {
+        return new Promise((resolve) => {
+            let answer = false;
+            openModal([
+                el('h3', { text: title }), el('p', { text: msg }),
+                el('div', { class: 'actions' },
+                    el('button', { class: 'btn ghost', type: 'button', on: { click: () => closeModal() } }, no),
+                    el('button', { class: `btn ${danger ? 'danger' : 'primary'}`, type: 'button', on: { click: () => { answer = true; closeModal(); } } }, yes)),
+            ], { dismissable: false, onClose: () => resolve(answer) });
+        });
+    }
+    function promptDialog({ title, label, type = 'password' }) {
+        return new Promise((resolve) => {
+            let value = null;
+            const input = el('input', { type, maxlength: 64, autocomplete: 'off' });
+            const form = el('form', {
+                on: { submit: (e) => { e.preventDefault(); value = input.value; closeModal(); } },
+            }, el('h3', { text: title }), el('label', { class: 'field' }, el('span', { text: label }), input),
+            el('div', { class: 'actions' },
+                el('button', { class: 'btn ghost', type: 'button', on: { click: () => closeModal() } }, 'Cancelar'),
+                el('button', { class: 'btn primary', type: 'submit' }, 'Entrar')));
+            openModal(form, { dismissable: false, onClose: () => resolve(value) });
+        });
     }
 
-    const handArea = document.getElementById('my-hand');
-    const cardsElements = Array.from(handArea.querySelectorAll('.card:not(.ghost-card)'));
-    
-    let newInsertIndex = cardsElements.length;
-    for (let i = 0; i < cardsElements.length; i++) {
-        const rect = cardsElements[i].getBoundingClientRect();
-        const cardMiddleX = rect.left + rect.width / 2;
-        if (clientX < cardMiddleX) {
-            newInsertIndex = i;
-            break;
-        }
+    let audioCtx = null;
+    let userGesture = false;
+    ['pointerdown', 'keydown', 'touchstart'].forEach((ev) => window.addEventListener(ev, () => { userGesture = true; }, { capture: true, once: true }));
+    function sfx(type) {
+        if (muted || !userGesture) return;
+        try {
+            audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const t = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            const tone = (wave, f0, f1, vol, dur) => {
+                osc.type = wave;
+                osc.frequency.setValueAtTime(f0, t);
+                if (f1) osc.frequency.exponentialRampToValueAtTime(f1, t + dur);
+                gain.gain.setValueAtTime(vol, t);
+                gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+                osc.start(t); osc.stop(t + dur);
+            };
+            if (type === 'draw') tone('sine', 300, 500, 0.1, 0.12);
+            else if (type === 'discard') tone('triangle', 400, 200, 0.1, 0.12);
+            else if (type === 'turn') tone('sine', 660, 880, 0.07, 0.3);
+            else if (type === 'pop') tone('sine', 800, 1200, 0.08, 0.12);
+            else if (type === 'win') tone('square', 440, 660, 0.08, 0.45);
+        } catch (e) { /* sem áudio */ }
     }
 
-    if (newInsertIndex !== targetInsertIndex) {
-        targetInsertIndex = newInsertIndex;
-        updateDropPlaceholder();
+    function confetti() {
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        const cv = $('confetti');
+        const dpr = window.devicePixelRatio || 1;
+        cv.width = window.innerWidth * dpr;
+        cv.height = window.innerHeight * dpr;
+        const ctx = cv.getContext('2d');
+        const colors = ['#c5a85b', '#ffffff', '#ff5252', '#4fc3f7', '#3ddc97'];
+        const parts = Array.from({ length: 140 }, () => ({
+            x: Math.random() * cv.width, y: -Math.random() * cv.height * 0.5,
+            vx: (Math.random() - 0.5) * 4 * dpr, vy: (2 + Math.random() * 4) * dpr,
+            s: (5 + Math.random() * 7) * dpr, r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.3,
+            c: colors[Math.floor(Math.random() * colors.length)],
+        }));
+        const end = Date.now() + 3200;
+        (function frame() {
+            ctx.clearRect(0, 0, cv.width, cv.height);
+            parts.forEach((p) => {
+                p.x += p.vx; p.y += p.vy; p.r += p.vr;
+                ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r);
+                ctx.fillStyle = p.c; ctx.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); ctx.restore();
+            });
+            if (Date.now() < end) requestAnimationFrame(frame); else ctx.clearRect(0, 0, cv.width, cv.height);
+        })();
     }
-}
 
-function updateDropPlaceholder() {
-    const handArea = document.getElementById('my-hand');
-    let placeholder = document.getElementById('drop-placeholder');
-    
-    if (!placeholder) {
-        placeholder = document.createElement('div');
-        placeholder.id = 'drop-placeholder';
-        placeholder.className = 'drop-placeholder';
+    /* ---------- cartas (DOM) ---------- */
+    function cardNode(card, { wild = false, extra = '' } = {}) {
+        const red = card.suit === '♥' || card.suit === '♦';
+        const corner = (pos) => el('div', { class: `corner ${pos}` }, el('b', { text: card.value }), el('i', { text: card.suit }));
+        return el('div', {
+            class: `card ${red ? 'red' : 'black'}${wild ? ' is-wild' : ''} ${extra}`.trim(),
+            role: 'img', 'aria-label': R.cardLabel(card) + (wild ? ' (curinga)' : ''), dataset: { id: card.id },
+        }, corner('tl'), el('div', { class: 'pip', text: card.suit }), corner('br'), wild ? el('span', { class: 'wild-star', text: '★' }) : null);
     }
-    
-    const cardsElements = Array.from(handArea.children).filter(el => el.id !== 'drop-placeholder');
-    if (targetInsertIndex >= cardsElements.length) {
-        handArea.appendChild(placeholder);
-    } else {
-        handArea.insertBefore(placeholder, cardsElements[targetInsertIndex]);
+    const backCard = (count) => el('div', { class: 'card back' }, count != null ? el('span', { class: 'count', text: String(count) }) : null);
+    const emptyCard = (text) => el('div', { class: 'card empty', text });
+
+    /* ====================================================================== */
+    /*  AUTENTICAÇÃO                                                           */
+    /* ====================================================================== */
+    const TAB_HINTS = {
+        guest: 'Sem cadastro. Suas vitórias valem só enquanto esta sessão durar e são apagadas quando você sair.',
+        login: 'Entre na sua conta para jogar com suas vitórias de sempre, em qualquer aparelho.',
+        signup: 'Crie uma conta para guardar suas vitórias e usar o mesmo nome em qualquer aparelho. Não precisa de e-mail.',
+    };
+
+    function setTab(tab) {
+        document.querySelectorAll('.tab').forEach((b) => {
+            const on = b.dataset.tab === tab;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        $('form-guest').hidden = tab !== 'guest';
+        $('form-login').hidden = tab !== 'login';
+        $('form-signup').hidden = tab !== 'signup';
+        let hint = TAB_HINTS[tab];
+        if (tab === 'signup' && upgradeMode && profile) hint = `Suas ${profile.wins} vitória(s) desta sessão serão levadas para a conta nova.`;
+        $('auth-hint').textContent = hint;
+        $('auth-error').textContent = '';
     }
-}
 
-function onDragEnd(e) {
-    if (draggingCardIndex === null) return;
+    function buildAvatarPickers() {
+        const render = () => document.querySelectorAll('[data-picker]').forEach((box) => {
+            box.replaceChildren(...AVATARS.map((a) => el('button', {
+                type: 'button', role: 'radio', 'aria-checked': a === chosenAvatar ? 'true' : 'false', 'aria-label': `Avatar ${a}`,
+                on: { click: () => { chosenAvatar = a; ls.set('pife_avatar', a); render(); } },
+            }, a)));
+        });
+        render();
+    }
 
-    const isCancel = e.type === 'touchcancel';
-
-    try {
-        const clientX = e.changedTouches ? e.changedTouches[0].clientX : e.clientX;
-        const clientY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
-
-        window.removeEventListener('mousemove', onDragMove);
-        window.removeEventListener('touchmove', onDragMove);
-        window.removeEventListener('mouseup', onDragEnd);
-        window.removeEventListener('touchend', onDragEnd);
-        window.removeEventListener('touchcancel', onDragEnd);
-
-        document.querySelector('.deck-area:nth-child(3)')?.classList.remove('drop-target');
-
-        document.querySelectorAll('.ghost-card').forEach(el => el.remove());
-        ghostElement = null;
-        document.querySelectorAll('.drop-placeholder').forEach(el => el.remove());
-
-        if (isCancel) {
-            draggingCardIndex = null;
-            targetInsertIndex = null;
-            renderHand();
+    function onAuthed(p, seqBefore = joinSeq) {
+        profile = p;
+        $('auth-error').textContent = '';
+        if (screen === 'game') {
+            // reconectou durante uma partida: o servidor devolve para a mesa ('joined'); se a mesa sumiu, volta ao saguão.
+            // seqBefore foi lido ANTES do pedido: o 'joined' pode chegar junto com a resposta, antes deste código rodar.
+            if (joinSeq !== seqBefore) return;
+            setTimeout(() => { if (joinSeq === seqBefore && screen === 'game') toLobby('A mesa não existe mais (o servidor reiniciou ou você foi removido).'); }, 1800);
             return;
         }
-
-        const cardObj = localHand[draggingCardIndex];
-
-        if (isMoved && isOverDiscardArea(clientX, clientY)) {
-            if (!amIPlaying) {
-                showToast('Não é sua vez de jogar!', true);
-            } else if (!hasDrawnThisTurn) {
-                showToast('Compre uma carta primeiro!', true);
-            } else {
-                socket.emit('discard', cardObj.id);
-            }
-        } 
-        else if (!isMoved) {
-            if (amIPlaying && hasDrawnThisTurn) {
-                customConfirm(`Deseja descartar a carta ${cardObj.value}${cardObj.suit}?`, () => {
-                    socket.emit('discard', cardObj.id);
-                });
-            } else {
-                toggleGroup(cardObj.id);
-            }
-        } 
-        else if (targetInsertIndex !== null) {
-            const [movedCard] = localHand.splice(draggingCardIndex, 1);
-            let finalIndex = targetInsertIndex;
-            if (draggingCardIndex < targetInsertIndex) finalIndex--;
-            localHand.splice(finalIndex, 0, movedCard);
-        }
-    } catch(err) {
-        console.error("Erro no dragEnd: ", err);
-        forceCleanDrag();
-    } finally {
-        draggingCardIndex = null;
-        targetInsertIndex = null;
-        renderHand();
+        if (joinSeq !== seqBefore) return; // já foi levado de volta para a mesa
+        renderLobby();
+        show('lobby');
     }
-}
 
-function renderHand() {
-    if (draggingCardIndex !== null) return; // Não atrapalha o arrasto do mobile
+    async function resumeSession() {
+        const seq = joinSeq;
+        const token = ls.get('pife_token');
+        if (token) {
+            const r = await ask('auth', { mode: 'token', token });
+            if (r.ok) return onAuthed(r.profile, seq);
+            if (r.expired) ls.del('pife_token');
+            else if (r.timeout) return;
+        }
+        const g = getGuest();
+        if (g && !ls.get('pife_token')) {
+            const r = await ask('auth', { mode: 'guest', guestId: g.id, nick: g.nick, avatar: g.avatar });
+            if (r.ok) return onAuthed(r.profile, seq);
+            if (r.timeout) return;
+            ss.del('pife_guest');
+        }
+        if (screen !== 'game') { profile = null; show('auth'); setTab('guest'); }
+    }
 
-    try {
-        const handArea = document.getElementById('my-hand');
-        handArea.className = `hand-area ${currentLayout}`;
-        handArea.innerHTML = localHand.map((card, index) => {
-            let isWildcard = (card.value === currentWildcardValue);
-            return renderCardHTML(card, isWildcard, isFirstDeal, index, currentLayout);
-        }).join('');
+    function bindAuthForms() {
+        document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
+        $('guest-nick').value = ls.get('pife_nick') || '';
 
-        localHand.forEach((card, index) => {
-            const cardEl = document.getElementById(`card-${card.id}`);
-            if (cardEl) {
-                cardEl.onmousedown = (e) => initCardDrag(e, index);
-                cardEl.ontouchstart = (e) => initCardDrag(e, index);
-            }
+        $('form-guest').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const nick = $('guest-nick').value.trim();
+            const g = getGuest() || { id: newGuestId() };
+            const r = await ask('auth', { mode: 'guest', guestId: g.id, nick, avatar: chosenAvatar });
+            if (!r.ok) { $('auth-error').textContent = r.error; return; }
+            ls.del('pife_token');
+            ls.set('pife_nick', nick);
+            ss.set('pife_guest', JSON.stringify({ id: g.id, nick, avatar: chosenAvatar }));
+            onAuthed(r.profile);
         });
 
-        if (localHand.length > 0) isFirstDeal = false;
-    } catch (err) {
-        console.error("Erro ao renderizar a mão: ", err);
-    }
-}
+        $('form-login').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const r = await ask('auth', { mode: 'login', username: $('login-user').value.trim(), password: $('login-pass').value });
+            if (!r.ok) { $('auth-error').textContent = r.error; return; }
+            ls.set('pife_token', r.token);
+            ss.del('pife_guest');
+            $('login-pass').value = '';
+            upgradeMode = false;
+            onAuthed(r.profile);
+        });
 
-function showToast(msg, playSound = false) {
-    if (playSound) playSFX('turn');
-    const toast = document.getElementById('turn-toast');
-    toast.innerText = msg;
-    toast.classList.add('show');
-    setTimeout(() => {
-        toast.classList.remove('show');
-    }, 2500);
-}
+        $('form-signup').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const g = getGuest();
+            const r = await ask('auth', {
+                mode: 'signup', username: $('signup-user').value.trim(), password: $('signup-pass').value,
+                avatar: chosenAvatar, guestId: g ? g.id : undefined,
+            });
+            if (!r.ok) { $('auth-error').textContent = r.error; return; }
+            ls.set('pife_token', r.token);
+            ss.del('pife_guest');
+            $('signup-pass').value = '';
+            upgradeMode = false;
+            onAuthed(r.profile);
+        });
 
-socket.on('gameState', (state) => {
-    const statusMsg = document.getElementById('status-message');
-    document.getElementById('btn-start').style.display = state.status === 'waiting' ? 'block' : 'none';
-    
-    currentWildcardValue = state.wildcardValue;
-    amIPlaying = (state.turn === socket.id && state.status === 'playing');
-    hasDrawnThisTurn = state.hasDrawnThisTurn;
-    
-    const deckCountEl = document.getElementById('deck-count');
-    if (deckCountEl) deckCountEl.innerText = state.deckCount || 0;
-
-    if (state.roomId) {
-        document.getElementById('display-room-name').innerText = state.roomId;
+        $('btn-auth-back').addEventListener('click', () => { upgradeMode = false; $('btn-auth-back').hidden = true; document.querySelector('.tabs').hidden = false; show('lobby'); });
     }
 
-    if (state.myName) {
-        myWins = state.myWins;
-        localStorage.setItem('pife_wins', myWins);
-        document.getElementById('player-name').innerHTML = `${state.isAdmin ? '👑' : ''} ${state.myAvatar} ${state.myName} <span class="trophy">🏆 ${myWins}</span>`;
+    /* ====================================================================== */
+    /*  SAGUÃO                                                                 */
+    /* ====================================================================== */
+    function renderLobby() {
+        if (!profile) return;
+        const guest = profile.type === 'guest';
+        $('lobby-avatar').textContent = profile.avatar;
+        $('lobby-name').textContent = profile.name;
+        $('lobby-kind').textContent = guest ? 'Convidado (sem conta)' : 'Conta registrada';
+        $('lobby-wins').textContent = `🏆 ${profile.wins}`;
+        $('lobby-note').textContent = guest
+            ? 'Suas vitórias valem só nesta sessão e somem quando você sair. Crie uma conta para guardá-las.'
+            : 'Suas vitórias ficam salvas na conta e aparecem em qualquer aparelho.';
+        $('btn-upgrade').hidden = !guest;
+        $('join-room').value = ls.get('pife_room') || '';
     }
 
-    if (state.isPaused) {
-        statusMsg.innerText = "JOGO PAUSADO";
-        statusMsg.style.color = "#ff4a4a";
-        statusMsg.classList.remove('my-turn-glow');
-    } else {
-        if (amIPlaying) {
-            statusMsg.innerText = hasDrawnThisTurn ? 'SUA VEZ: Descarte' : 'SUA VEZ: Compre';
-            statusMsg.classList.add('my-turn-glow');
-            if (!wasMyTurn) showToast('✨ É a sua vez de jogar!', true);
-        } else {
-            statusMsg.innerText = state.status === 'waiting' ? 'Aguardando Inicio...' : 'Aguarde o oponente';
-            statusMsg.classList.remove('my-turn-glow');
+    function renderRooms(list) {
+        const ul = $('room-list');
+        if (!list.length) { ul.replaceChildren(el('li', { class: 'room-empty', text: 'Nenhuma sala aberta. Crie a sua acima!' })); return; }
+        ul.replaceChildren(...list.map((r) => {
+            const li = el('li', { class: 'room-item', tabindex: '0', role: 'button' },
+                el('span', { text: r.hasPassword ? '🔒' : '🟢' }),
+                el('span', { class: 'name', text: r.id }),
+                r.playing ? el('span', { class: 'room-badge', text: 'em jogo' }) : null,
+                el('span', { class: 'room-badge', text: `${r.count}/4` }));
+            const go = async () => {
+                $('join-room').value = r.id;
+                let password = '';
+                if (r.hasPassword) {
+                    password = await promptDialog({ title: `Sala ${r.id}`, label: 'Esta sala tem senha:' });
+                    if (password === null) return;
+                }
+                joinRoom(r.id, password);
+            };
+            li.addEventListener('click', go);
+            li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+            return li;
+        }));
+    }
+
+    async function joinRoom(room, password) {
+        const name = (room || '').trim() || 'MESA1';
+        ls.set('pife_room', name);
+        const r = await ask('join_room', { room: name, password: password || '' });
+        if (!r.ok) alertDialog(r.error);
+        else $('join-pass').value = '';
+    }
+
+    function toLobby(msg) {
+        game = null; localHand = []; selectedId = null; wasMyTurn = false; lastRoomId = null; pendingState = null;
+        closeModal(); setChat(false);
+        renderLobby();
+        show('lobby');
+        if (msg) alertDialog(msg);
+    }
+
+    async function doLogout() {
+        if (!profile) return;
+        const guest = profile.type === 'guest';
+        const ok = await confirmDialog(
+            guest ? `Ao sair, suas ${profile.wins} vitória(s) desta sessão serão apagadas. Para guardá-las, crie uma conta. Sair mesmo assim?`
+                : 'Sair da sua conta neste aparelho? Suas vitórias continuam salvas.',
+            { title: 'Sair', yes: 'Sair', danger: guest });
+        if (!ok) return;
+        await ask('logout', { token: ls.get('pife_token') || undefined });
+        ls.del('pife_token'); ss.del('pife_guest');
+        profile = null; upgradeMode = false;
+        game = null; localHand = [];
+        $('btn-auth-back').hidden = true; document.querySelector('.tabs').hidden = false;
+        show('auth'); setTab('guest');
+    }
+
+    /* ====================================================================== */
+    /*  MESA                                                                   */
+    /* ====================================================================== */
+    const myTurn = () => !!game && game.status === 'playing' && game.turnPid === game.me.pid;
+    const canDraw = () => myTurn() && !game.paused && game.phase === 'draw';
+    const canDiscard = () => myTurn() && !game.paused && game.phase === 'discard';
+    const effectiveLayout = () => (layout === 'fan' && window.innerWidth < 700 ? 'open' : layout);
+
+    function whyNotDraw() {
+        if (!game || game.status !== 'playing') return 'A partida ainda não começou.';
+        if (game.paused) return 'Jogo pausado: um jogador caiu.';
+        if (!myTurn()) return 'Ainda não é a sua vez.';
+        if (game.phase !== 'draw') return 'Você já comprou: agora descarte uma carta.';
+        return '';
+    }
+
+    function applyState(state) {
+        const prev = game;
+        game = state;
+        if (!prev || prev.roomId !== state.roomId) { localHand = []; selectedId = null; }
+
+        const ids = new Set(state.me.hand.map((c) => c.id));
+        localHand = localHand.filter((c) => ids.has(c.id));
+        const have = new Set(localHand.map((c) => c.id));
+        const fresh = new Set();
+        state.me.hand.forEach((c) => { if (!have.has(c.id)) { localHand.push(c); fresh.add(c.id); } });
+        if (selectedId && !ids.has(selectedId)) selectedId = null;
+
+        if (profile) { profile.wins = state.me.wins; }
+        const mine = myTurn();
+        if (mine && !wasMyTurn && !state.paused) { toast('✨ É a sua vez!', 1800); sfx('turn'); }
+        wasMyTurn = mine;
+
+        $('room-name').textContent = state.roomId;
+        $('chat-room').textContent = state.roomId;
+        renderTop(); renderHint(); renderOpponents(); renderTable(); renderHand(fresh); renderMeld(); renderActions();
+    }
+
+    function handleState(state) {
+        if (drag) { pendingState = state; return; }
+        applyState(state);
+    }
+
+    function renderTop() {
+        const m = game.me;
+        $('me-chip').replaceChildren(
+            el('span', { text: game.isAdmin ? '👑' : '' }), el('span', { text: m.avatar }),
+            el('span', { class: 'nm', text: m.name }), el('span', { class: 'trophy', text: `🏆 ${m.wins}` }));
+    }
+
+    function countdownNode(at) {
+        return el('b', { class: 'cd', dataset: { at: String(at || 0) }, text: '…' });
+    }
+
+    function renderHint() {
+        const hint = $('hint');
+        hint.className = 'hintbar';
+        hint.replaceChildren();
+        const s = game;
+        if (s.status === 'waiting') {
+            const n = s.players.length;
+            if (s.isAdmin) {
+                hint.append(
+                    el('span', {}, n < 2
+                        ? ['Você é o administrador 👑. Chame alguém: diga o nome da sala ', el('b', { text: s.roomId }), ' (2 a 4 jogadores).']
+                        : 'Todos prontos? Toque em Iniciar quando quiser.'),
+                    el('button', { class: 'btn primary', type: 'button', disabled: n < 2, on: { click: () => socket.emit('startGame') } }, '▶ Iniciar partida'));
+            } else {
+                hint.append(el('span', {}, 'Aguardando o administrador 👑 iniciar a partida…'));
+            }
+            return;
         }
-        wasMyTurn = amIPlaying;
+        if (s.paused) {
+            hint.classList.add('warn');
+            const off = s.players.filter((p) => !p.connected);
+            hint.append(el('span', {}, 'Jogo pausado: aguardando ', el('b', { text: off.map((p) => p.name).join(', ') }),
+                ' voltar (', countdownNode(Math.min(...off.map((p) => p.reconnectAt || Infinity))), 's).'));
+            updateCountdowns();
+            return;
+        }
+        if (myTurn()) {
+            hint.classList.add('mine');
+            if (s.phase === 'draw') {
+                hint.append(el('span', {}, [el('b', { text: 'Sua vez · 1º passo: ' }), 'compre uma carta, do ', el('b', { text: 'Monte' }), ' (fechada) ou do ', el('b', { text: 'Lixo' }), ' (a carta aberta).']));
+            } else {
+                hint.append(el('span', {}, [el('b', { text: 'Sua vez · 2º passo: ' }), 'toque numa carta e em ', el('b', { text: 'Descartar' }),
+                    ' (ou arraste até o Lixo). Com 3 jogos prontos, toque em ', el('b', { text: 'BATER!' }), s.me.lockedDiscardId ? ' A carta que você pegou do Lixo não pode voltar agora.' : '']));
+            }
+            return;
+        }
+        const cur = s.players.find((p) => p.pid === s.turnPid);
+        hint.append(el('span', {}, cur ? `Vez de ${cur.avatar} ${cur.name}… organize suas cartas enquanto espera.` : 'Aguarde…'));
     }
 
-    document.getElementById('wildcard-container').innerHTML = renderCardHTML(state.wildcardCard, false, false);
-    if (state.wildcardValue) {
-        document.getElementById('wildcard-text').innerText = state.wildcardValue;
-        document.getElementById('wildcard-badge').style.display = 'block';
-    } else {
-        document.getElementById('wildcard-badge').style.display = 'none';
+    function updateCountdowns() {
+        document.querySelectorAll('.cd').forEach((n) => {
+            const at = Number(n.dataset.at);
+            n.textContent = Number.isFinite(at) && at > 0 ? String(Math.max(0, Math.ceil((at - Date.now()) / 1000))) : '…';
+        });
     }
 
-    const topDiscard = state.discardPile.length > 0 ? state.discardPile[state.discardPile.length - 1] : null;
-    document.getElementById('discard-container').innerHTML = renderCardHTML(topDiscard, false, false);
-
-    document.getElementById('opponents-area').innerHTML = state.opponents.map(op => `
-        <div id="opp-${op.id}" class="opponent ${op.isTurn ? 'is-turn' : ''} ${!op.connected ? 'offline' : ''}">
-            ${state.isAdmin ? `<button class="kick-btn" onclick="kickPlayerReq('${op.sessionId}')" title="Expulsar Jogador">❌</button>` : ''}
-            ${op.isTurn && op.connected ? '<div class="turn-badge">Vez Dele</div>' : ''}
-            ${!op.connected ? '<div class="offline-tag">Caiu...</div>' : ''}
-            <h3>${op.isAdmin ? '👑' : ''} ${op.avatar} ${op.name}</h3>
-            <div><span class="trophy">🏆 ${op.wins || 0}</span></div>
-            <p>${op.cardCount} cartas</p>
-        </div>
-    `).join('');
-
-    let newCards = state.myHand.filter(c => !localHand.find(lc => lc.id === c.id));
-    localHand = localHand.filter(lc => state.myHand.find(c => c.id === lc.id));
-    localHand = [...localHand, ...newCards];
-    renderHand();
-});
-
-socket.on('gameOver', (data) => {
-    playSFX('win');
-    wasMyTurn = false;
-    
-    document.getElementById('game-screen').style.display = 'none';
-    document.getElementById('game-over-screen').style.display = 'flex';
-    document.getElementById('winner-msg').innerHTML = `🎉 ${data.winner} BATEU! 🎉`;
-    
-    let html = data.winningSets.map(set => `
-        <div class="set-group">
-            ${set.map(card => renderCardHTML(card, card.value === currentWildcardValue, false)).join('')}
-        </div>
-    `).join('');
-
-    if (data.discard) {
-        html += `<div class="set-group" style="margin-left: 50px; opacity: 0.7;">
-            <div><small style="color:#fff;">Descarte:</small><br>${renderCardHTML(data.discard, false, false)}</div>
-        </div>`;
+    function renderOpponents() {
+        const box = $('opponents');
+        box.replaceChildren(...game.players.filter((p) => !p.isMe).map((p) => {
+            const turn = game.status === 'playing' && game.turnPid === p.pid && p.connected;
+            const n = el('div', { class: `opp${turn ? ' turn' : ''}${p.connected ? '' : ' offline'}`, dataset: { pid: p.pid } },
+                turn ? el('div', { class: 'tag', text: 'Vez dele(a)' }) : null,
+                !p.connected ? el('div', { class: 'tag off' }, 'Caiu · ', countdownNode(p.reconnectAt), 's') : null,
+                game.isAdmin ? el('button', { class: 'kick', type: 'button', 'aria-label': `Expulsar ${p.name}`, text: '✕', on: { click: () => kickPlayer(p) } }) : null,
+                el('div', { class: 'nm', text: `${p.isAdmin ? '👑 ' : ''}${p.avatar} ${p.name}` }),
+                el('div', { class: 'meta' }, el('span', { class: 'trophy', text: `🏆 ${p.wins}` }),
+                    game.status === 'playing' ? el('span', { class: 'cards-mini', text: `🂠 ${p.cards}` }) : null));
+            return n;
+        }));
+        updateCountdowns();
     }
-    document.getElementById('winner-hand').innerHTML = html;
 
-    if (typeof confetti === 'function') {
-        var duration = 3 * 1000;
-        var end = Date.now() + duration;
-        (function frame() {
-            confetti({ particleCount: 5, angle: 60, spread: 55, origin: { x: 0 }, colors: ['#c5a85b', '#ffffff'] });
-            confetti({ particleCount: 5, angle: 120, spread: 55, origin: { x: 1 }, colors: ['#c5a85b', '#ffffff'] });
-            if (Date.now() < end) requestAnimationFrame(frame);
-        }());
+    async function kickPlayer(p) {
+        const ok = await confirmDialog(`Expulsar ${p.name} da sala?`, { yes: 'Expulsar', danger: true });
+        if (ok) socket.emit('kick_player', p.pid);
     }
-});
 
-function backToLobby() { 
-    document.getElementById('game-over-screen').style.display = 'none';
-    document.getElementById('game-screen').style.display = 'flex';
-}
-
-function sendChatMessage() {
-    const input = document.getElementById('chat-input');
-    const msg = input.value;
-    if (msg.trim()) {
-        socket.emit('send_chat', msg);
-        input.value = '';
+    function renderTable() {
+        const s = game;
+        const draw = canDraw();
+        const playing = s.status === 'playing';
+        $('pile-deck').querySelector('.pile-card').replaceChildren(s.status === 'playing' ? backCard(s.deckCount) : emptyCard('Monte'));
+        $('pile-wild').querySelector('.pile-card').replaceChildren(s.wildcardCard ? cardNode(s.wildcardCard) : emptyCard('Curinga'));
+        $('wild-label').replaceChildren(...(s.wildcardValue
+            ? ['Vira · curinga é o ', el('b', { text: s.wildcardValue, style: 'color:#ffeb3b;font-size:1.15em' })]
+            : ['Curinga']));
+        $('pile-discard').querySelector('.pile-card').replaceChildren(s.discardTop ? cardNode(s.discardTop) : emptyCard(playing ? 'vazio' : 'Lixo'));
+        ['pile-deck', 'pile-discard'].forEach((id) => {
+            $(id).classList.toggle('can-draw', draw);
+            $(id).classList.toggle('locked', playing && !draw);
+            $(id).setAttribute('aria-disabled', draw ? 'false' : 'true');
+        });
     }
-}
 
-function handleChatKey(e) {
-    if (e.key === 'Enter') sendChatMessage();
-}
+    /* ----- mão ----- */
+    function computeMelds() {
+        if (!game || game.status !== 'playing' || !game.wildcardValue || localHand.length < 3) return { groups: [], rest: localHand.slice(), count: 0 };
+        return R.bestMelds(localHand, game.wildcardValue);
+    }
 
-function toggleMobileChat() {
-    document.getElementById('chat-panel').classList.toggle('mobile-open');
-}
+    function renderHand(fresh = new Set()) {
+        const hand = $('hand');
+        const lay = effectiveLayout();
+        hand.className = `hand mode-${lay}`;
+        const melds = computeMelds();
+        const groupOf = new Map();
+        melds.groups.forEach((g, gi) => g.forEach((c) => groupOf.set(c.id, gi)));
+        const winnable = localHand.length === 10 && melds.count === 3;
+        const wv = game ? game.wildcardValue : null;
+        const n = localHand.length;
 
-socket.on('chat_message', (data) => {
-    const msgs = document.getElementById('chat-messages');
-    msgs.innerHTML += `<div class="chat-msg"><span>${data.sender}:</span> ${data.text}</div>`;
-    msgs.scrollTop = msgs.scrollHeight; 
-});
+        hand.replaceChildren(...localHand.map((card, i) => {
+            const node = cardNode(card, { wild: !!wv && card.value === wv });
+            node.tabIndex = 0;
+            if (groupOf.has(card.id)) node.dataset.g = String(groupOf.get(card.id));
+            if (winnable && !groupOf.has(card.id)) node.classList.add('loose');
+            if (card.id === selectedId) node.classList.add('selected');
+            if (fresh.has(card.id)) node.classList.add('fresh');
+            if (lay === 'fan') node.style.setProperty('--rot', `${((i - (n - 1) / 2) * 4).toFixed(1)}deg`);
+            return node;
+        }));
+    }
 
-socket.on('chat_system', (msg) => {
-    const msgs = document.getElementById('chat-messages');
-    msgs.innerHTML += `<div class="chat-msg system">${msg}</div>`;
-    msgs.scrollTop = msgs.scrollHeight;
-});
+    function renderMeld() {
+        const box = $('meld-status');
+        box.replaceChildren();
+        if (!game || game.status !== 'playing' || !localHand.length) return;
+        const m = computeMelds();
+        const dots = el('span', { class: 'meld-dots', 'aria-hidden': 'true' }, [0, 1, 2].map((i) => el('i', { class: i < m.count ? `on g${i}` : '' })));
+        let text;
+        if (m.count === 3 && localHand.length === 10) text = el('span', { class: 'ready', text: '✅ Jogos prontos! Toque em BATER!' });
+        else if (m.count === 3) text = el('span', { class: 'ready', text: myTurn() ? '✅ 3 jogos prontos! Compre uma carta e bata.' : '✅ 3 jogos prontos! Espere a sua vez.' });
+        else text = el('span', { text: `${m.count} de 3 jogos prontos` });
+        box.append(dots, text);
+    }
+
+    function renderActions() {
+        const sortBtn = $('btn-sort'); const disc = $('btn-discard'); const bat = $('btn-bater');
+        sortBtn.classList.toggle('disabled', localHand.length < 2);
+        const sel = localHand.find((c) => c.id === selectedId);
+        disc.textContent = sel ? `Descartar ${sel.value}${sel.suit}` : 'Descartar';
+        const canD = canDiscard() && !!sel;
+        disc.classList.toggle('ready', canD);
+        disc.classList.toggle('disabled', !canD);
+        const canB = canDiscard() && localHand.length === 10 && computeMelds().count === 3;
+        bat.classList.toggle('ready', canB);
+        bat.classList.toggle('disabled', !canDiscard());
+    }
+
+    function toggleSelect(id) {
+        selectedId = selectedId === id ? null : id;
+        document.querySelectorAll('#hand .card').forEach((c) => c.classList.toggle('selected', c.dataset.id === selectedId));
+        renderActions();
+    }
+
+    function tryDiscard(id) {
+        if (!game || game.status !== 'playing') return toast('A partida ainda não começou.');
+        if (game.paused) return toast('Jogo pausado: um jogador caiu.');
+        if (!myTurn()) return toast('Ainda não é a sua vez.');
+        if (game.phase !== 'discard') return toast('Compre uma carta primeiro (Monte ou Lixo).');
+        if (id === game.me.lockedDiscardId) return toast('Você acabou de pegar essa carta do Lixo. Descarte outra.');
+        socket.emit('discard', id);
+        selectedId = null;
+    }
+
+    function autoSort() {
+        if (localHand.length < 2) return;
+        const m = computeMelds();
+        const rest = R.sortCards(m.rest);
+        localHand = [...m.groups.flat(), ...rest];
+        renderHand(); renderActions();
+        toast(m.count ? `🪄 Organizei: ${m.count} jogo(s) pronto(s) à esquerda, com faixas coloridas.` : '🪄 Cartas ordenadas por naipe e valor. Ainda não há jogos prontos.');
+    }
+
+    /* ----- arrastar e soltar (Pointer Events: mouse e toque) ----- */
+    const overDiscard = (x, y) => {
+        const r = $('pile-discard').getBoundingClientRect();
+        return x >= r.left - 24 && x <= r.right + 24 && y >= r.top - 24 && y <= r.bottom + 24;
+    };
+
+    function onHandPointerDown(e) {
+        const cardEl = e.target.closest('.card');
+        if (!cardEl || drag || (e.pointerType === 'mouse' && e.button !== 0)) return;
+        drag = { id: cardEl.dataset.id, el: cardEl, pointerId: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, ghost: null, marker: null, insertIndex: null, discard: false };
+        try { cardEl.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+        cardEl.addEventListener('pointermove', onDragMove);
+        cardEl.addEventListener('pointerup', onDragEnd);
+        cardEl.addEventListener('pointercancel', onDragEnd);
+    }
+
+    function startGhost(e) {
+        const rect = drag.el.getBoundingClientRect();
+        const ghost = drag.el.cloneNode(true);
+        ghost.classList.remove('selected', 'fresh', 'loose');
+        ghost.classList.add('ghost-card');
+        ghost.style.setProperty('--cw', `${rect.width}px`);
+        document.body.append(ghost);
+        drag.ghost = ghost;
+        drag.w = rect.width; drag.h = rect.height;
+        drag.el.classList.add('dragging-origin');
+        drag.marker = el('div', { class: 'drop-marker' });
+        $('hand').append(drag.marker);
+    }
+
+    function onDragMove(e) {
+        if (!drag || e.pointerId !== drag.pointerId) return;
+        if (!drag.moved) {
+            if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < (e.pointerType === 'mouse' ? 4 : 10)) return;
+            drag.moved = true;
+            startGhost(e);
+        }
+        drag.ghost.style.left = `${e.clientX - drag.w / 2}px`;
+        drag.ghost.style.top = `${e.clientY - drag.h * 0.6}px`;
+
+        drag.discard = overDiscard(e.clientX, e.clientY);
+        $('pile-discard').classList.toggle('drop-target', drag.discard);
+        const handEl = $('hand');
+        const hr = handEl.getBoundingClientRect();
+        const inHand = !drag.discard && e.clientY > hr.top - 70 && e.clientY < hr.bottom + 70;
+        drag.insertIndex = null;
+        drag.marker.style.display = 'none';
+        if (!inHand) return;
+
+        const others = [...handEl.querySelectorAll('.card')].filter((c) => c !== drag.el);
+        if (!others.length) { drag.insertIndex = 0; return; }
+        let best = 0; let bestD = Infinity;
+        others.forEach((c, i) => {
+            const r = c.getBoundingClientRect();
+            const d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
+            if (d < bestD) { bestD = d; best = i; }
+        });
+        const r = others[best].getBoundingClientRect();
+        const after = e.clientX > r.left + r.width / 2;
+        drag.insertIndex = best + (after ? 1 : 0);
+        drag.marker.style.display = 'block';
+        drag.marker.style.left = `${(after ? r.right : r.left) - hr.left + handEl.scrollLeft - 2}px`;
+        drag.marker.style.top = `${r.top - hr.top}px`;
+        drag.marker.style.height = `${r.height}px`;
+    }
+
+    function onDragEnd(e) {
+        if (!drag || e.pointerId !== drag.pointerId) return;
+        const d = drag;
+        drag = null;
+        d.el.removeEventListener('pointermove', onDragMove);
+        d.el.removeEventListener('pointerup', onDragEnd);
+        d.el.removeEventListener('pointercancel', onDragEnd);
+        try { d.el.releasePointerCapture(d.pointerId); } catch (err) { /* ignore */ }
+        if (d.ghost) d.ghost.remove();
+        if (d.marker) d.marker.remove();
+        d.el.classList.remove('dragging-origin');
+        $('pile-discard').classList.remove('drop-target');
+
+        if (e.type !== 'pointercancel') {
+            if (!d.moved) {
+                toggleSelect(d.id);
+            } else if (d.discard) {
+                tryDiscard(d.id);
+            } else if (d.insertIndex !== null) {
+                const moving = localHand.find((c) => c.id === d.id);
+                const others = localHand.filter((c) => c.id !== d.id);
+                if (moving) { others.splice(d.insertIndex, 0, moving); localHand = others; }
+            }
+        }
+        if (pendingState) { const s = pendingState; pendingState = null; applyState(s); } else { renderHand(); renderMeld(); renderActions(); }
+    }
+
+    function cancelDrag() {
+        if (!drag) return;
+        onDragEnd({ type: 'pointercancel', pointerId: drag.pointerId });
+    }
+
+    /* ----- chat ----- */
+    function setChat(open) {
+        chatOpen = open;
+        $('chat').classList.toggle('open', open);
+        if (open) { $('chat-dot').hidden = true; const m = $('chat-messages'); m.scrollTop = m.scrollHeight; }
+    }
+
+    function pushChat(node, countsAsUnread) {
+        const box = $('chat-messages');
+        const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
+        box.append(node);
+        while (box.children.length > 150) box.firstChild.remove();
+        if (stick) box.scrollTop = box.scrollHeight;
+        if (countsAsUnread && !chatOpen && window.innerWidth < 1000) $('chat-dot').hidden = false;
+    }
+
+    /* ----- menu, ajuda, fim de rodada ----- */
+    function setTheme(name) {
+        document.body.className = `theme-${name}`;
+        ls.set('pife_theme', name);
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', THEMES[name]);
+    }
+
+    function openMenu() {
+        const themeRow = el('div', { class: 'menu-row' }, el('label', { text: 'Cor da mesa' }),
+            Object.keys(THEMES).map((t) => el('button', {
+                class: 'theme-dot', type: 'button', style: `background:${THEMES[t]}`, 'aria-label': `Mesa ${t}`,
+                'aria-pressed': document.body.className === `theme-${t}` ? 'true' : 'false',
+                on: { click: () => { setTheme(t); openMenu(); } },
+            })));
+        const layoutRow = el('div', { class: 'menu-row' }, el('label', { text: 'Como mostrar a mão' }),
+            [['open', 'Aberto'], ['overlap', 'Sobreposto'], ['fan', 'Leque']].map(([k, label]) => el('button', {
+                class: `chip${k === 'fan' ? ' layout-fan-chip' : ''}`, type: 'button', 'aria-pressed': layout === k ? 'true' : 'false',
+                on: { click: () => { layout = k; ls.set('pife_layout', k); renderHand(); openMenu(); } },
+            }, label)));
+        const emoteRow = el('div', { class: 'menu-row' }, el('label', { text: 'Reagir' }),
+            EMOTES.map((em) => el('button', { class: 'chip emoji', type: 'button', on: { click: () => { socket.emit('send_emote', em); closeModal(); } } }, em)));
+        const soundRow = el('div', { class: 'menu-row' }, el('label', { text: 'Som' }),
+            el('button', { class: 'chip', type: 'button', 'aria-pressed': muted ? 'false' : 'true', on: { click: () => { muted = !muted; ls.set('pife_mute', muted ? '1' : '0'); openMenu(); } } }, muted ? '🔇 Desligado' : '🔊 Ligado'));
+        const actions = el('div', { class: 'menu-row' }, el('label', { text: 'Mesa' }),
+            game && game.isAdmin ? el('button', { class: 'btn ghost small', type: 'button', on: { click: async () => {
+                closeModal();
+                if (await confirmDialog('Resetar a mesa cancela a partida de todos. Continuar?', { yes: 'Resetar', danger: true })) socket.emit('resetGame');
+            } } }, '♻️ Resetar mesa') : null,
+            el('button', { class: 'btn danger small', type: 'button', on: { click: async () => {
+                closeModal();
+                if (await confirmDialog('Levantar da mesa e voltar ao saguão?', { yes: 'Sair da mesa', danger: true })) socket.emit('leave_table');
+            } } }, '🚪 Sair da mesa'));
+        openModal([el('h3', { text: 'Menu' }), el('div', { class: 'menu-grid' }, themeRow, layoutRow, emoteRow, soundRow, actions),
+            el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', on: { click: () => closeModal() } }, 'Fechar'))]);
+    }
+
+    function openHelp() {
+        const p = (t) => el('p', { text: t });
+        openModal([
+            el('h3', { text: 'Como jogar Pife' }),
+            p('Objetivo: formar 3 jogos de 3 cartas com a sua mão. Joga-se com 2 baralhos, 2 a 4 pessoas, e cada um começa com 9 cartas.'),
+            el('h4', { text: 'O que é um jogo' }),
+            el('ul', {}, el('li', { text: 'Trinca: 3 cartas do mesmo valor e de naipes diferentes (7♥ 7♦ 7♠).' }),
+                el('li', { text: 'Sequência: 3 cartas seguidas do mesmo naipe (4♣ 5♣ 6♣). O Ás vale A-2-3 ou Q-K-A, mas não dá a volta (K-A-2 não vale).' })),
+            el('h4', { text: 'Curinga' }),
+            p('A carta virada na mesa (a "vira") define o curinga: é o valor logo acima dela. Virou 7? Todos os 8 são curingas e valem qualquer carta. Eles aparecem com borda dourada e ★.'),
+            el('h4', { text: 'Sua vez' }),
+            el('ul', {}, el('li', { text: '1º: compre uma carta do Monte (fechada) ou do Lixo (a de cima, aberta).' }),
+                el('li', { text: '2º: descarte uma carta no Lixo (você volta a ter 9). Você não pode descartar a carta que acabou de pegar do Lixo.' })),
+            el('h4', { text: 'Bater (ganhar a rodada)' }),
+            p('Depois de comprar você tem 10 cartas. Se 9 delas formam os 3 jogos, toque em BATER! A 10ª carta sobrando é o seu descarte (ela ganha um contorno tracejado).'),
+            el('h4', { text: 'Dicas' }),
+            el('ul', {}, el('li', { text: 'As faixas coloridas na base das cartas mostram os jogos que você já tem.' }),
+                el('li', { text: '🪄 Ordenar junta seus jogos à esquerda. Arraste para reorganizar ou até o Lixo para descartar.' }),
+                el('li', { text: 'Conta: com conta suas vitórias ficam salvas. Como convidado, valem só nesta sessão.' })),
+            el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', on: { click: () => closeModal() } }, 'Entendi')),
+        ], { cls: 'help' });
+    }
+
+    function showGameOver(d) {
+        const mine = game && d.winnerPid === game.me.pid;
+        sfx('win');
+        confetti();
+        const sets = d.sets.map((s) => el('div', { class: 'over-set' }, s.map((c) => cardNode(c, { wild: c.value === d.wildcardValue, extra: 'mini' }))));
+        openModal([
+            el('h3', { text: mine ? '🎉 Você bateu!' : `🏆 ${d.winnerAvatar} ${d.winnerName} bateu!` }),
+            el('p', { text: 'Jogos validados pelo servidor:' }),
+            el('div', { class: 'over-sets' }, sets,
+                d.discard ? el('div', { class: 'over-set', title: 'Descarte' }, cardNode(d.discard, { extra: 'mini' })) : null),
+            el('table', { class: 'scoreboard' }, d.scoreboard.map((r) => el('tr', {}, el('td', { text: `${r.avatar} ${r.name}` }), el('td', { text: `🏆 ${r.wins}` })))),
+            el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', on: { click: () => closeModal() } }, 'Continuar')),
+        ]);
+    }
+
+    /* ====================================================================== */
+    /*  EVENTOS DO SOCKET                                                      */
+    /* ====================================================================== */
+    socket.on('connect', () => { hideToast(); resumeSession(); });
+    socket.on('disconnect', () => toast('📶 Conexão perdida. Reconectando…', 0));
+    socket.on('room_list', renderRooms);
+
+    socket.on('joined', ({ roomId }) => {
+        joinSeq += 1;
+        if (lastRoomId !== roomId) { $('chat-messages').replaceChildren(); lastRoomId = roomId; selectedId = null; localHand = []; game = null; }
+        closeModal();
+        show('game');
+    });
+    socket.on('left_table', () => toLobby());
+    socket.on('kicked_by_admin', () => toLobby('Você foi expulso(a) da sala pelo administrador.'));
+    socket.on('session_replaced', () => toLobby('Sua conta entrou em outro aparelho, então esta tela saiu da mesa.'));
+    socket.on('gameState', handleState);
+    socket.on('game_started', () => toast('🎲 A partida começou! Veja o curinga no centro da mesa.', 3000));
+    socket.on('alerta', (msg) => toast(String(msg)));
+    socket.on('play_sound', sfx);
+    socket.on('gameOver', showGameOver);
+
+    socket.on('chat_message', (d) => {
+        const mine = game && d.pid === game.me.pid;
+        pushChat(el('div', { class: `chat-msg${mine ? ' mine' : ''}` }, el('b', { text: `${d.avatar || ''} ${d.sender}: ` }), d.text), !mine);
+    });
+    socket.on('chat_system', (msg) => pushChat(el('div', { class: 'chat-msg system', text: String(msg) }), false));
+
+    socket.on('receive_emote', ({ pid, emote }) => {
+        sfx('pop');
+        const origin = (game && game.me.pid === pid) ? $('me-chip') : document.querySelector(`[data-pid="${CSS.escape(String(pid))}"]`);
+        const node = el('div', { class: 'floating-emote', text: String(emote) });
+        const r = origin ? origin.getBoundingClientRect() : null;
+        node.style.left = r ? `${r.left + r.width / 2}px` : '50%';
+        node.style.top = r ? `${r.top + 10}px` : '40%';
+        document.body.append(node);
+        setTimeout(() => node.remove(), 2500);
+    });
+
+    /* ====================================================================== */
+    /*  LIGAÇÕES DE INTERFACE                                                  */
+    /* ====================================================================== */
+    function bindUI() {
+        $('form-join').addEventListener('submit', (e) => { e.preventDefault(); joinRoom($('join-room').value.toUpperCase(), $('join-pass').value); });
+        $('btn-logout').addEventListener('click', doLogout);
+        $('btn-upgrade').addEventListener('click', () => {
+            upgradeMode = true;
+            document.querySelector('.tabs').hidden = true;
+            $('btn-auth-back').hidden = false;
+            show('auth'); setTab('signup');
+        });
+        document.querySelectorAll('[data-help]').forEach((b) => b.addEventListener('click', openHelp));
+        $('btn-help').addEventListener('click', openHelp);
+        $('btn-menu').addEventListener('click', openMenu);
+        $('btn-chat').addEventListener('click', () => setChat(!chatOpen));
+        $('btn-chat-close').addEventListener('click', () => setChat(false));
+        $('chat-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const input = $('chat-input');
+            if (input.value.trim()) socket.emit('send_chat', input.value);
+            input.value = '';
+        });
+
+        const drawFrom = (event) => () => {
+            if (!canDraw()) return toast(whyNotDraw());
+            socket.emit(event);
+        };
+        const bindPile = (id, event) => {
+            const node = $(id);
+            const go = drawFrom(event);
+            node.addEventListener('click', go);
+            node.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+        };
+        bindPile('pile-deck', 'draw_deck');
+        bindPile('pile-discard', 'draw_discard');
+
+        $('btn-sort').addEventListener('click', autoSort);
+        $('btn-discard').addEventListener('click', () => {
+            if (!selectedId) return toast(myTurn() && game.phase === 'discard' ? 'Toque numa carta da sua mão para escolher qual descartar.' : whyNotDraw() || 'Compre uma carta primeiro.');
+            tryDiscard(selectedId);
+        });
+        $('btn-bater').addEventListener('click', () => {
+            if (!canDiscard()) return toast(myTurn() ? 'Para bater, primeiro compre uma carta (Monte ou Lixo).' : 'Você só pode bater na sua vez, depois de comprar.');
+            socket.emit('bater');
+        });
+
+        const hand = $('hand');
+        hand.addEventListener('pointerdown', onHandPointerDown);
+        hand.addEventListener('contextmenu', (e) => e.preventDefault());
+        hand.addEventListener('keydown', (e) => {
+            const card = e.target.closest && e.target.closest('.card');
+            if (card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleSelect(card.dataset.id); }
+        });
+
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { if (modalClose) closeModal(); else if (chatOpen) setChat(false); } });
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') cancelDrag(); });
+        window.addEventListener('blur', cancelDrag);
+        window.addEventListener('resize', () => { if (game && screen === 'game' && !drag) renderHand(); });
+        setInterval(updateCountdowns, 1000);
+    }
+
+    /* ---------- início ---------- */
+    setTheme(THEMES[ls.get('pife_theme')] ? ls.get('pife_theme') : 'green');
+    buildAvatarPickers();
+    bindAuthForms();
+    bindUI();
+    setTab('guest');
+    setTimeout(() => { if (screen === 'splash') { show('auth'); setTab('guest'); } }, 10000);
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+})();
