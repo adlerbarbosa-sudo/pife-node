@@ -521,7 +521,7 @@
         $('wild-label').replaceChildren(...(s.wildcardValue
             ? ['Vira · curinga é o ', el('b', { text: s.wildcardValue, style: 'color:#ffeb3b;font-size:1.15em' })]
             : ['Curinga']));
-        $('pile-discard').querySelector('.pile-card').replaceChildren(s.discardTop ? cardNode(s.discardTop) : emptyCard(playing ? 'vazio' : 'Lixo'));
+        $('pile-discard').querySelector('.pile-card').replaceChildren(s.discardTop ? cardNode(s.discardTop, { wild: !!s.wildcardValue && s.discardTop.value === s.wildcardValue }) : emptyCard(playing ? 'vazio' : 'Lixo'));
         ['pile-deck', 'pile-discard'].forEach((id) => {
             $(id).classList.toggle('can-draw', draw);
             $(id).classList.toggle('locked', playing && !draw);
@@ -742,8 +742,6 @@
                 class: `chip${k === 'fan' ? ' layout-fan-chip' : ''}`, type: 'button', 'aria-pressed': layout === k ? 'true' : 'false',
                 on: { click: () => { layout = k; ls.set('pife_layout', k); renderHand(); openMenu(); } },
             }, label)));
-        const emoteRow = el('div', { class: 'menu-row' }, el('label', { text: 'Reagir' }),
-            EMOTES.map((em) => el('button', { class: 'chip emoji', type: 'button', on: { click: () => { socket.emit('send_emote', em); closeModal(); } } }, em)));
         const soundRow = el('div', { class: 'menu-row' }, el('label', { text: 'Som' }),
             el('button', { class: 'chip', type: 'button', 'aria-pressed': muted ? 'false' : 'true', on: { click: () => { muted = !muted; ls.set('pife_mute', muted ? '1' : '0'); openMenu(); } } }, muted ? '🔇 Desligado' : '🔊 Ligado'));
         const actions = el('div', { class: 'menu-row' }, el('label', { text: 'Mesa' }),
@@ -755,7 +753,7 @@
                 closeModal();
                 if (await confirmDialog('Levantar da mesa e voltar ao saguão?', { yes: 'Sair da mesa', danger: true })) socket.emit('leave_table');
             } } }, '🚪 Sair da mesa'));
-        openModal([el('h3', { text: 'Menu' }), el('div', { class: 'menu-grid' }, themeRow, layoutRow, emoteRow, soundRow, actions),
+        openModal([el('h3', { text: 'Menu' }), el('div', { class: 'menu-grid' }, themeRow, layoutRow, soundRow, actions),
             el('div', { class: 'actions' }, el('button', { class: 'btn primary', type: 'button', on: { click: () => closeModal() } }, 'Fechar'))]);
     }
 
@@ -839,7 +837,20 @@
     /* ====================================================================== */
     /*  LIGAÇÕES DE INTERFACE                                                  */
     /* ====================================================================== */
+    function buildReactBar() {
+        $('reactbar').replaceChildren(...EMOTES.map((em) => el('button', {
+            class: 'react', type: 'button', 'aria-label': `Reagir com ${em}`,
+            on: { click: (e) => {
+                const btn = e.currentTarget;
+                socket.emit('send_emote', em);
+                btn.classList.add('cool');                       // evita spam sem travar a barra toda
+                setTimeout(() => btn.classList.remove('cool'), 900);
+            } },
+        }, em)));
+    }
+
     function bindUI() {
+        buildReactBar();
         $('form-join').addEventListener('submit', (e) => { e.preventDefault(); joinRoom($('join-room').value.toUpperCase(), $('join-pass').value); });
         $('btn-logout').addEventListener('click', doLogout);
         $('btn-upgrade').addEventListener('click', () => {
