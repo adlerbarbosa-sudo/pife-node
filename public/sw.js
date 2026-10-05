@@ -2,7 +2,7 @@
  * Estratégia "rede primeiro": sempre tenta a versão nova e só usa o cache se estiver offline.
  * (Antes era "cache primeiro" com versão fixa: depois do 1º acesso o jogador ficava preso numa versão antiga.)
  * Mude VERSION para descartar caches antigos. Nunca intercepta /socket.io nem requisições que não sejam GET. */
-const VERSION = 'pife-v2';
+const VERSION = 'pife-v3';
 const CORE = ['/', '/index.html', '/style.css', '/client.js', '/rules.js', '/manifest.json', '/icons/icon.svg'];
 
 self.addEventListener('install', (event) => {
